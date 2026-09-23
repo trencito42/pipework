@@ -40,20 +40,17 @@ public struct GameplayScreen: View {
 
     public var body: some View {
         ZStack {
-            // Dark graphite environment with subtle radial vignette
-            RadialGradient(
-                colors: [PipeworkTheme.bgVignette, PipeworkTheme.bgBase],
-                center: .init(x: 0.5, y: 0.3),
-                startRadius: 20,
-                endRadius: 500
-            )
-            .ignoresSafeArea()
+            // Low-contrast deep obsidian backdrop
+            PipeworkTheme.bgBase
+                .ignoresSafeArea()
 
-            VStack(spacing: 16) {
-                // 1. Header Zone
+            VStack(spacing: 12) {
+                // 1. Unified Navigation Header Bar
                 headerZone
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
 
-                // 2. 3-Column Status Bar with Integrated Pressure Meter
+                // 2. Minimalist Status Bar (Lines, Moves, Pressure Gauge)
                 StatusPanel(
                     connectedLines: puzzleState.connectedLineCount,
                     totalLines: puzzleState.totalLineCount,
@@ -62,7 +59,9 @@ public struct GameplayScreen: View {
                 )
                 .padding(.horizontal, 16)
 
-                // 3. Hero Board Container
+                Spacer(minLength: 4)
+
+                // 3. Hero Puzzle Board Container
                 BoardCanvasView(
                     state: $puzzleState,
                     history: $history,
@@ -72,30 +71,28 @@ public struct GameplayScreen: View {
                 )
                 .aspectRatio(1.0, contentMode: .fit)
                 .padding(.horizontal, 16)
-                .frame(maxHeight: .infinity)
 
-                // Feedback owns a stable lane so it never competes with the controls.
+                // 4. Feedback / Toast Notification Lane
                 ZStack {
                     if let toast = toastMessage {
                         Text(toast)
-                            .font(PipeworkTheme.monoFont(size: 11, weight: .bold))
-                            .foregroundColor(Color(red: 140/255, green: 160/255, blue: 180/255))
-                            .padding(.horizontal, 12)
+                            .font(PipeworkTheme.captionFont(size: 12, weight: .semibold))
+                            .foregroundColor(PipeworkTheme.textSecondary)
+                            .padding(.horizontal, 14)
                             .padding(.vertical, 6)
                             .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(Color(red: 13/255, green: 17/255, blue: 23/255))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(Color(red: 33/255, green: 42/255, blue: 54/255), lineWidth: 1)
-                                    )
+                                Capsule()
+                                    .fill(PipeworkTheme.bgElevated)
+                                    .overlay(Capsule().stroke(PipeworkTheme.borderSubtle, lineWidth: 1))
                             )
-                            .transition(.opacity)
+                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
                     }
                 }
                 .frame(height: 28)
 
-                // 4. Bottom Tactical Controls Zone (Undo, Hint, Restart)
+                Spacer(minLength: 4)
+
+                // 5. Tactical Bottom Controls Bar (Undo, Hint, Restart)
                 controlsZone
                     .padding(.horizontal, 24)
                     .padding(.bottom, 16)
@@ -139,100 +136,75 @@ public struct GameplayScreen: View {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 13, weight: .bold))
                     Text("Levels")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(PipeworkTheme.headingFont(size: 14, weight: .semibold))
                 }
-                .foregroundColor(PipeworkTheme.textMain)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .foregroundColor(PipeworkTheme.textSecondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
                 .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color(red: 24/255, green: 31/255, blue: 39/255), PipeworkTheme.panelBase],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(PipeworkTheme.borderBright.opacity(0.7), lineWidth: 1))
+                    Capsule()
+                        .fill(PipeworkTheme.bgElevated)
+                        .overlay(Capsule().stroke(PipeworkTheme.borderSubtle, lineWidth: 1))
                 )
             }
 
             Spacer()
 
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(PipeworkTheme.primaryCyan)
-                    .frame(width: 6, height: 6)
-                    .shadow(color: PipeworkTheme.primaryCyan, radius: 4)
-
-                Text("PIPEWORK")
-                    .font(PipeworkTheme.monoFont(size: 16, weight: .semibold))
+            // Centered Level Info
+            VStack(spacing: 1) {
+                Text("Level \(currentLevel.number)")
+                    .font(PipeworkTheme.headingFont(size: 16, weight: .bold))
                     .foregroundColor(PipeworkTheme.textMain)
-                    .tracking(3.1)
+                Text("\(currentPack.name) · Par \(currentLevel.parMoves)")
+                    .font(PipeworkTheme.captionFont(size: 11, weight: .medium))
+                    .foregroundColor(PipeworkTheme.textMuted)
             }
 
             Spacer()
 
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Button(action: toggleSound) {
                     Image(systemName: persistence.profile.soundEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(persistence.profile.soundEnabled ? PipeworkTheme.textMain : PipeworkTheme.textDim)
-                        .frame(width: 32, height: 32)
-                        .background(headerControlBackground)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(persistence.profile.soundEnabled ? PipeworkTheme.textMain : PipeworkTheme.textMuted)
                 }
+                .buttonStyle(PipeworkIconButtonStyle(size: 34))
 
                 Button(action: {
                     HapticService.shared.buttonTap()
                     isSettingsOpen = true
                 }) {
                     Image(systemName: "gearshape.fill")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(PipeworkTheme.textMuted)
-                        .frame(width: 32, height: 32)
-                        .background(headerControlBackground)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(PipeworkTheme.textSecondary)
                 }
+                .buttonStyle(PipeworkIconButtonStyle(size: 34))
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
     }
 
-    private var headerControlBackground: some View {
-        RoundedRectangle(cornerRadius: 8)
-            .fill(
-                LinearGradient(
-                    colors: [Color(red: 24/255, green: 31/255, blue: 39/255), Color(red: 10/255, green: 14/255, blue: 18/255)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(PipeworkTheme.borderBright.opacity(0.65), lineWidth: 1))
-            .shadow(color: .black.opacity(0.42), radius: 4, y: 2)
-    }
-
-    // MARK: - Tactical Controls Zone
+    // MARK: - Bottom Tactical Controls Zone
 
     private var controlsZone: some View {
-        HStack(spacing: 28) {
-            // Undo Button
-            tacticalRoundButton(
+        HStack(spacing: 16) {
+            // Undo Action
+            tacticalControlButton(
                 iconName: "arrow.uturn.backward",
                 label: "Undo",
                 disabled: !history.canUndo || isVictoryPresented,
                 action: undoAction
             )
 
-            // Hint Button
-            tacticalRoundButton(
+            // Hint Action
+            tacticalControlButton(
                 iconName: "lightbulb",
                 label: "Hint",
                 disabled: isVictoryPresented,
                 action: provideHintAction
             )
 
-            // Restart Button
-            tacticalRoundButton(
+            // Restart Action
+            tacticalControlButton(
                 iconName: "arrow.triangle.2.circlepath",
                 label: "Restart",
                 disabled: false,
@@ -241,46 +213,32 @@ public struct GameplayScreen: View {
         }
     }
 
-    private func tacticalRoundButton(
+    private func tacticalControlButton(
         iconName: String,
         label: String,
         disabled: Bool,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            VStack(spacing: 7) {
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color(red: 32/255, green: 42/255, blue: 52/255), Color(red: 10/255, green: 14/255, blue: 19/255)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 50, height: 50)
-                        .overlay(Circle().stroke(Color.black.opacity(0.85), lineWidth: 3))
-                        .overlay(Circle().stroke(disabled ? PipeworkTheme.borderDim : PipeworkTheme.primaryCyan.opacity(0.48), lineWidth: 1))
-                        .shadow(color: disabled ? .clear : PipeworkTheme.primaryCyan.opacity(0.12), radius: 7)
-                        .shadow(color: Color.black.opacity(0.72), radius: 7, y: 4)
-
-                    Circle()
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                        .frame(width: 42, height: 42)
-
-                    Image(systemName: iconName)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(disabled ? PipeworkTheme.textDim : Color(red: 166/255, green: 191/255, blue: 205/255))
-                }
-
-                Text(label.uppercased())
-                    .font(PipeworkTheme.monoFont(size: 9, weight: .bold))
-                    .foregroundColor(disabled ? PipeworkTheme.textDim : PipeworkTheme.textMuted)
-                    .tracking(1.25)
+            HStack(spacing: 8) {
+                Image(systemName: iconName)
+                    .font(.system(size: 14, weight: .semibold))
+                Text(label)
+                    .font(PipeworkTheme.headingFont(size: 14, weight: .semibold))
             }
+            .foregroundColor(disabled ? PipeworkTheme.textDim : PipeworkTheme.textSecondary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity)
+            .background(
+                Capsule()
+                    .fill(PipeworkTheme.bgElevated)
+                    .overlay(Capsule().stroke(PipeworkTheme.borderSubtle, lineWidth: 1))
+            )
         }
         .disabled(disabled)
-        .buttonStyle(TactileButtonStyle())
+        .opacity(disabled ? 0.45 : 1.0)
+        .buttonStyle(TactileControlStyle())
     }
 
     // MARK: - Stroke & Victory Coordination
@@ -295,7 +253,7 @@ public struct GameplayScreen: View {
             )
 
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                withAnimation(.spring(duration: 0.4)) {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     isVictoryPresented = true
                 }
             }
@@ -304,7 +262,7 @@ public struct GameplayScreen: View {
                   puzzleState.pressurePercentage < 100,
                   !hasShownPressureGuidance {
             hasShownPressureGuidance = true
-            showToast("LINES COMPLETE · PRESSURE \(puzzleState.pressurePercentage)% · FILL EVERY CELL")
+            showToast("Lines connected · Fill every cell to reach 100% pressure")
         }
     }
 
@@ -447,28 +405,28 @@ public struct GameplayScreen: View {
             }
         }
         toastWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: work)
     }
 
     private func showOnboardingPromptIfNeeded() {
         guard currentLevel.packId == LevelRepository.sector5x5Pack.id else { return }
         switch currentLevel.number {
         case 1:
-            showToast("CONNECT MATCHING TERMINALS")
+            showToast("Connect matching colored terminals")
         case 2:
-            showToast("FILL EVERY CELL · PRESSURE MUST REACH 100%")
+            showToast("Fill every cell · 100% pressure required")
         case 4:
-            showToast("DRAG THROUGH A ROUTE TO CUT IT")
+            showToast("Drag through an active route to cut it")
         default:
             break
         }
     }
 }
 
-private struct TactileButtonStyle: ButtonStyle {
+private struct TactileControlStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.92 : 1.0)
-            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.94 : 1.0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }

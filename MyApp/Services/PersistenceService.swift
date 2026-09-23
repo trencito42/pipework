@@ -69,6 +69,10 @@ public struct PlayerProfile: Codable, Sendable {
     public var lastPlayedLevelId: String?
     public var highestUnlockedLevelIndex: Int
 
+    public var totalStarsEarned: Int {
+        levelRecords.values.reduce(0) { $0 + $1.starsEarned }
+    }
+
     public static let initial = PlayerProfile(
         schemaVersion: 2,
         completedLevelIds: [],

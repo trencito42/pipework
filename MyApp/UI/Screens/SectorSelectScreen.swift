@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Clean, human level selection browser displaying pack tabs and star ratings.
+/// Clean, lightweight level browser displaying pack segments and compact level tiles.
 public struct SectorSelectScreen: View {
     @ObservedObject private var persistence = PersistenceService.shared
     @State private var selectedPackIndex: Int = 0
@@ -33,86 +33,103 @@ public struct SectorSelectScreen: View {
             PipeworkTheme.bgBase
                 .ignoresSafeArea()
 
-            VStack(spacing: 20) {
+            VStack(spacing: 16) {
                 // Top Navigation Bar
                 HStack {
                     Button(action: {
                         HapticService.shared.buttonTap()
                         onBack()
                     }) {
-                        HStack(spacing: 6) {
+                        HStack(spacing: 5) {
                             Image(systemName: "chevron.left")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(.system(size: 13, weight: .bold))
                             Text("Menu")
-                                .font(.system(size: 15, weight: .semibold))
+                                .font(PipeworkTheme.headingFont(size: 14, weight: .semibold))
                         }
-                        .foregroundColor(PipeworkTheme.textMain)
+                        .foregroundColor(PipeworkTheme.textSecondary)
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 7)
                         .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(PipeworkTheme.panelBase)
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(PipeworkTheme.borderDim, lineWidth: 1))
+                            Capsule()
+                                .fill(PipeworkTheme.bgElevated)
+                                .overlay(Capsule().stroke(PipeworkTheme.borderSubtle, lineWidth: 1))
                         )
                     }
 
                     Spacer()
 
-                    Text("Levels")
-                        .font(.system(size: 18, weight: .heavy))
+                    Text("Level Select")
+                        .font(PipeworkTheme.headingFont(size: 17, weight: .bold))
                         .foregroundColor(PipeworkTheme.textMain)
 
                     Spacer()
 
-                    Color.clear
-                        .frame(width: 60, height: 32)
+                    // Pack star progress
+                    let packStars = currentPack.levels.reduce(0) { $0 + (persistence.getRecord(for: $1.id)?.starsEarned ?? 0) }
+                    let totalPossible = currentPack.levels.count * 3
+                    HStack(spacing: 4) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(PipeworkTheme.goldStar)
+                        Text("\(packStars)/\(totalPossible)")
+                            .font(PipeworkTheme.captionFont(size: 12, weight: .bold))
+                            .foregroundColor(PipeworkTheme.textSecondary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(PipeworkTheme.bgElevated)
+                            .overlay(Capsule().stroke(PipeworkTheme.borderSubtle, lineWidth: 1))
+                    )
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
 
-                // Pack Tabs Scroll
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(Array(packs.enumerated()), id: \.offset) { index, pack in
-                            Button(action: {
-                                HapticService.shared.buttonTap()
-                                selectedPackIndex = index
-                            }) {
-                                Text("\(pack.name) Grid")
-                                    .font(.system(size: 14, weight: selectedPackIndex == index ? .bold : .medium))
-                                    .foregroundColor(selectedPackIndex == index ? PipeworkTheme.primaryCyan : PipeworkTheme.textMuted)
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 10)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 10)
-                                            .fill(selectedPackIndex == index ? PipeworkTheme.panelSubtle : PipeworkTheme.panelBase)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 10)
-                                                    .stroke(selectedPackIndex == index ? PipeworkTheme.primaryCyan.opacity(0.6) : PipeworkTheme.borderDim, lineWidth: 1)
-                                            )
-                                    )
-                            }
+                // Refined Segmented Control
+                HStack(spacing: 4) {
+                    ForEach(Array(packs.enumerated()), id: \.offset) { index, pack in
+                        Button(action: {
+                            HapticService.shared.buttonTap()
+                            selectedPackIndex = index
+                        }) {
+                            Text(pack.name)
+                                .font(PipeworkTheme.headingFont(size: 14, weight: selectedPackIndex == index ? .bold : .medium))
+                                .foregroundColor(selectedPackIndex == index ? PipeworkTheme.textMain : PipeworkTheme.textMuted)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(
+                                    RoundedRectangle(cornerRadius: PipeworkTheme.radiusSmall)
+                                        .fill(selectedPackIndex == index ? PipeworkTheme.surfaceSubtle : Color.clear)
+                                )
                         }
                     }
-                    .padding(.horizontal, 20)
                 }
+                .padding(4)
+                .background(
+                    RoundedRectangle(cornerRadius: PipeworkTheme.radiusMedium)
+                        .fill(PipeworkTheme.bgElevated)
+                        .overlay(RoundedRectangle(cornerRadius: PipeworkTheme.radiusMedium).stroke(PipeworkTheme.borderSubtle, lineWidth: 1))
+                )
+                .padding(.horizontal, 20)
 
-                // Level Grid
+                // Lightweight Level Grid
                 ScrollView {
-                    LazyVStack(spacing: 22) {
+                    LazyVStack(spacing: 24) {
                         ForEach(chapters) { chapter in
                             VStack(alignment: .leading, spacing: 10) {
                                 chapterHeader(chapter)
-                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+
+                                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 5), spacing: 10) {
                                     ForEach(chapter.levels) { level in
-                                        levelCard(level: level)
+                                        compactLevelTile(level: level)
                                     }
                                 }
                             }
                         }
                     }
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 24)
+                    .padding(.bottom, 28)
                 }
             }
         }
@@ -120,25 +137,20 @@ public struct SectorSelectScreen: View {
 
     private func chapterHeader(_ chapter: LevelChapter) -> some View {
         let completed = chapter.levels.filter { persistence.isLevelCompleted($0.id) }.count
-        let stars = chapter.levels.reduce(0) { $0 + (persistence.getRecord(for: $1.id)?.starsEarned ?? 0) }
         return HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("SUBSECTOR \(String(format: "%02d", chapter.number))")
-                    .font(PipeworkTheme.monoFont(size: 11, weight: .bold))
-                    .foregroundColor(PipeworkTheme.textMain)
-                    .tracking(1.2)
-                Text("\(completed)/\(chapter.levels.count) restored")
-                    .font(PipeworkTheme.monoFont(size: 10, weight: .medium))
-                    .foregroundColor(PipeworkTheme.textMuted)
-            }
+            Text("Sector \(chapter.number)")
+                .font(PipeworkTheme.headingFont(size: 13, weight: .bold))
+                .foregroundColor(PipeworkTheme.textSecondary)
+
             Spacer()
-            Label("\(stars)/\(chapter.levels.count * 3)", systemImage: "star.fill")
-                .font(PipeworkTheme.monoFont(size: 10, weight: .bold))
-                .foregroundColor(PipeworkTheme.primaryCyan)
+
+            Text("\(completed)/\(chapter.levels.count) completed")
+                .font(PipeworkTheme.captionFont(size: 11, weight: .medium))
+                .foregroundColor(PipeworkTheme.textMuted)
         }
     }
 
-    private func levelCard(level: LevelDefinition) -> some View {
+    private func compactLevelTile(level: LevelDefinition) -> some View {
         let record = persistence.getRecord(for: level.id)
         let isCompleted = record?.isCompleted ?? false
         let stars = record?.starsEarned ?? 0
@@ -150,56 +162,44 @@ public struct SectorSelectScreen: View {
             HapticService.shared.buttonTap()
             onSelectLevel(currentPack, level)
         }) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Level \(level.number)")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(isUnlocked ? PipeworkTheme.textMain : PipeworkTheme.textMuted)
-                    Spacer()
-                    if isCompleted {
-                        Circle()
-                            .fill(PipeworkTheme.pressureGreen)
-                            .frame(width: 8, height: 8)
-                            .shadow(color: PipeworkTheme.pressureGreen, radius: 4)
-                    } else if !isUnlocked {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(PipeworkTheme.textDim)
-                    }
-                }
-
-                HStack(spacing: 3) {
-                    ForEach(1...3, id: \.self) { starIndex in
-                        Image(systemName: starIndex <= stars ? "star.fill" : "star")
-                            .font(.system(size: 12))
-                            .foregroundColor(starIndex <= stars ? PipeworkTheme.primaryCyan : PipeworkTheme.textDim)
-                    }
-                }
-
-                HStack {
-                    Text("Par: \(level.parMoves)")
-                        .font(PipeworkTheme.monoFont(size: 11, weight: .medium))
+            VStack(spacing: 4) {
+                if !isUnlocked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(PipeworkTheme.textDim)
-                    Spacer()
-                    if let best = record?.bestMoves {
-                        Text("Best: \(best)")
-                            .font(PipeworkTheme.monoFont(size: 11, weight: .bold))
-                            .foregroundColor(PipeworkTheme.primaryCyan)
+                        .frame(height: 22)
+                } else {
+                    Text("\(level.number)")
+                        .font(PipeworkTheme.statNumberFont(size: 15, weight: .bold))
+                        .foregroundColor(isCompleted ? PipeworkTheme.textMain : (isCurrent ? PipeworkTheme.primaryCyan : PipeworkTheme.textSecondary))
+                        .frame(height: 22)
+                }
+
+                // 3 Star Dots
+                HStack(spacing: 3) {
+                    ForEach(1...3, id: \.self) { starIdx in
+                        Circle()
+                            .fill(starIdx <= stars ? (isCompleted ? PipeworkTheme.goldStar : PipeworkTheme.primaryCyan) : PipeworkTheme.textDim.opacity(0.35))
+                            .frame(width: 4, height: 4)
                     }
                 }
             }
-            .padding(14)
+            .frame(maxWidth: .infinity)
+            .frame(height: 56)
             .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(PipeworkTheme.panelBase)
+                RoundedRectangle(cornerRadius: PipeworkTheme.radiusMedium)
+                    .fill(isCurrent ? PipeworkTheme.surfaceSubtle : PipeworkTheme.surfaceCard)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(isCurrent ? PipeworkTheme.primaryCyan.opacity(0.7) : (isCompleted ? PipeworkTheme.borderBright : PipeworkTheme.borderDim), lineWidth: isCurrent ? 1.5 : 1)
+                        RoundedRectangle(cornerRadius: PipeworkTheme.radiusMedium)
+                            .stroke(
+                                isCurrent ? PipeworkTheme.primaryCyan.opacity(0.6) : (isCompleted ? PipeworkTheme.pressureGreen.opacity(0.25) : PipeworkTheme.borderSubtle),
+                                lineWidth: isCurrent ? 1.5 : 1.0
+                            )
                     )
             )
         }
         .disabled(!isUnlocked)
-        .opacity(isUnlocked ? 1.0 : 0.48)
+        .opacity(isUnlocked ? 1.0 : 0.45)
         .buttonStyle(PlainButtonStyle())
     }
 }

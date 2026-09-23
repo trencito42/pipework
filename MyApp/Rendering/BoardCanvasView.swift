@@ -1,7 +1,7 @@
 import SwiftUI
 import Combine
 
-/// High-performance Canvas renderer recreating the tactile industrial look of PIPEWORK.
+/// High-performance, clean, geometric Canvas renderer for PIPEWORK.
 public struct BoardCanvasView: View {
     @Binding public var state: PuzzleState
     @Binding public var history: MoveHistory
@@ -39,18 +39,17 @@ public struct BoardCanvasView: View {
                 let geometry = BoardGeometry(
                     gridSize: state.gridSize,
                     containerSize: proxy.size,
-                    margin: 8
+                    margin: 6
                 )
 
                 ZStack {
                     Canvas { context, _ in
-                        drawBoardShell(context: context, geometry: geometry)
-                        drawGridPlates(context: context, geometry: geometry)
-                        drawHoses(context: context, geometry: geometry, time: timeInterval)
-                        drawCouplings(context: context, geometry: geometry)
-                        drawActiveDragNozzle(context: context, geometry: geometry)
-                        drawSockets(context: context, geometry: geometry)
-                        drawBlockedFeedback(context: context, geometry: geometry)
+                        drawBoardBackdrop(context: context, geometry: geometry)
+                        drawGridCells(context: context, geometry: geometry)
+                        drawPipes(context: context, geometry: geometry, time: timeInterval)
+                        drawActiveDragTether(context: context, geometry: geometry)
+                        drawTerminalSockets(context: context, geometry: geometry)
+                        drawBlockedIndicator(context: context, geometry: geometry)
                     }
 
                     #if canImport(UIKit) && !os(watchOS)
@@ -90,7 +89,6 @@ public struct BoardCanvasView: View {
                             )
                         },
                         onPredictedTouchMoved: { predPoint in
-                            // Update visual drag nozzle position only (does NOT affect puzzle state)
                             dragPointerLocation = predPoint
                         }
                     )
@@ -145,256 +143,154 @@ public struct BoardCanvasView: View {
         blockedTask?.cancel()
         localBlockedCoord = coord
         blockedTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 260_000_000)
+            try? await Task.sleep(nanoseconds: 240_000_000)
             if localBlockedCoord == coord {
                 localBlockedCoord = nil
             }
         }
     }
 
-    // MARK: - 1. Board Shell & Corner Mechanical Bolts
+    // MARK: - 1. Clean Geometric Board Backdrop
 
-    private func drawBoardShell(context: GraphicsContext, geometry: BoardGeometry) {
+    private func drawBoardBackdrop(context: GraphicsContext, geometry: BoardGeometry) {
         let rect = geometry.boardRect
-        let shellPath = Path(roundedRect: rect, cornerRadius: 18)
+        let cornerRadius: CGFloat = min(22, geometry.cellSize * 0.35)
+        let boardPath = Path(roundedRect: rect, cornerRadius: cornerRadius)
 
+        // Soft ambient shadow
         context.drawLayer { layer in
-            layer.addFilter(.shadow(color: .black.opacity(0.82), radius: 12, x: 0, y: 7))
-            layer.fill(shellPath, with: .color(Color(red: 5/255, green: 8/255, blue: 11/255)))
+            layer.addFilter(.shadow(color: Color.black.opacity(0.45), radius: 16, x: 0, y: 8))
+            layer.fill(boardPath, with: .color(PipeworkTheme.bgCanvas))
         }
+
+        // Deep matte board surface
         context.fill(
-            shellPath,
-            with: .linearGradient(
-                Gradient(colors: [
-                    Color(red: 19/255, green: 27/255, blue: 35/255),
-                    Color(red: 8/255, green: 11/255, blue: 15/255),
-                    Color(red: 4/255, green: 6/255, blue: 9/255)
-                ]),
-                startPoint: CGPoint(x: rect.minX, y: rect.minY),
-                endPoint: CGPoint(x: rect.maxX, y: rect.maxY)
-            )
+            boardPath,
+            with: .color(PipeworkTheme.bgElevated)
         )
-        context.stroke(shellPath, with: .color(Color(red: 45/255, green: 61/255, blue: 75/255)), lineWidth: 1.5)
+
+        // Refined outer edge stroke
         context.stroke(
-            Path(roundedRect: rect.insetBy(dx: 3, dy: 3), cornerRadius: 15),
-            with: .color(Color(red: 103/255, green: 139/255, blue: 158/255).opacity(0.16)),
-            lineWidth: 1
+            boardPath,
+            with: .color(PipeworkTheme.borderSubtle),
+            lineWidth: 1.0
         )
-
-        // 4 Corner Mechanical Bolts
-        let boltDiameter = max(6, geometry.cellSize * 0.12)
-        let boltMargin: CGFloat = 8
-        let corners: [CGPoint] = [
-            CGPoint(x: rect.minX + boltMargin, y: rect.minY + boltMargin),
-            CGPoint(x: rect.maxX - boltMargin, y: rect.minY + boltMargin),
-            CGPoint(x: rect.minX + boltMargin, y: rect.maxY - boltMargin),
-            CGPoint(x: rect.maxX - boltMargin, y: rect.maxY - boltMargin)
-        ]
-
-        for corner in corners {
-            let boltRect = CGRect(
-                x: corner.x - boltDiameter / 2,
-                y: corner.y - boltDiameter / 2,
-                width: boltDiameter,
-                height: boltDiameter
-            )
-            let boltPath = Path(ellipseIn: boltRect)
-            context.fill(
-                boltPath,
-                with: .linearGradient(
-                    Gradient(colors: [Color(red: 93/255, green: 110/255, blue: 128/255), Color(red: 15/255, green: 20/255, blue: 27/255)]),
-                    startPoint: CGPoint(x: boltRect.minX, y: boltRect.minY),
-                    endPoint: CGPoint(x: boltRect.maxX, y: boltRect.maxY)
-                )
-            )
-            context.stroke(boltPath, with: .color(Color.black.opacity(0.75)), lineWidth: 1)
-            var slot = Path()
-            slot.move(to: CGPoint(x: corner.x - boltDiameter * 0.22, y: corner.y))
-            slot.addLine(to: CGPoint(x: corner.x + boltDiameter * 0.22, y: corner.y))
-            context.stroke(slot, with: .color(Color.black.opacity(0.65)), lineWidth: 0.8)
-        }
     }
 
-    // MARK: - 2. Grid Plates & Registration Ticks
+    // MARK: - 2. Subtle Grid Cells & Alignment Dots
 
-    private func drawGridPlates(context: GraphicsContext, geometry: BoardGeometry) {
+    private func drawGridCells(context: GraphicsContext, geometry: BoardGeometry) {
+        let cs = geometry.cellSize
+        let cellInset = max(1.5, cs * 0.04)
+        let cellRadius = max(4, cs * 0.14)
+
         for y in 0..<geometry.gridSize.height {
             for x in 0..<geometry.gridSize.width {
                 let coord = GridCoord(x: x, y: y)
                 let cellRect = geometry.cellRect(for: coord)
+                let insetRect = cellRect.insetBy(dx: cellInset, dy: cellInset)
+                let cellPath = Path(roundedRect: insetRect, cornerRadius: cellRadius)
 
-                let seamRect = cellRect.insetBy(dx: 1.2, dy: 1.2)
-                context.fill(Path(seamRect), with: .color(Color.white.opacity(0.008)))
-                context.stroke(Path(seamRect), with: .color(Color(red: 77/255, green: 102/255, blue: 120/255).opacity(0.075)), lineWidth: 0.8)
+                // Quiet cell tile fill
+                context.fill(
+                    cellPath,
+                    with: .color(PipeworkTheme.surfaceCard.opacity(0.45))
+                )
 
+                // Subtle grid cell outline
+                context.stroke(
+                    cellPath,
+                    with: .color(Color.white.opacity(0.025)),
+                    lineWidth: 0.75
+                )
+
+                // Center guide dot
                 let center = geometry.center(for: coord)
-                let tickSize = max(1.4, geometry.cellSize * 0.025)
-                let tickRect = CGRect(x: center.x - tickSize / 2, y: center.y - tickSize / 2, width: tickSize, height: tickSize)
-                context.fill(Path(ellipseIn: tickRect), with: .color(Color(red: 103/255, green: 140/255, blue: 160/255).opacity(0.13)))
+                let dotSize = max(2.0, cs * 0.05)
+                let dotRect = CGRect(x: center.x - dotSize / 2, y: center.y - dotSize / 2, width: dotSize, height: dotSize)
+                context.fill(
+                    Path(ellipseIn: dotRect),
+                    with: .color(Color.white.opacity(0.07))
+                )
             }
         }
     }
 
-    // MARK: - 3. Multi-Layer Vulcanized Hoses & Fluid Cores
+    // MARK: - 3. Clean Modern Geometric Pipes
 
-    private func drawHoses(context: GraphicsContext, geometry: BoardGeometry, time: TimeInterval) {
+    private func drawPipes(context: GraphicsContext, geometry: BoardGeometry, time: TimeInterval) {
         let cs = geometry.cellSize
-        let outerWidth = cs * 0.40
-        let shellShoulderWidth = cs * 0.345
-        let shellLightWidth = cs * 0.30
-        let trenchWidth = cs * 0.255
-        let fluidEdgeWidth = cs * 0.195
-        let fluidWidth = cs * 0.155
-        let fluidLightWidth = cs * 0.085
-        let specularWidth = max(1.0, cs * 0.028)
-        let lightingOffset = CGSize(width: -cs * 0.035, height: -cs * 0.045)
+        let outerWidth = cs * 0.44
+        let coreWidth = cs * 0.28
+        let innerGlowWidth = cs * 0.14
 
         for (_, pathModel) in state.paths {
             guard pathModel.coordinates.count >= 2 else { continue }
             let isConnected = pathModel.isConnected
             let fluidColor = PipeworkTheme.fluidColor(for: pathModel.fluidType)
             let path = buildContinuousPath(coordinates: pathModel.coordinates, geometry: geometry)
-            let litPath = buildContinuousPath(coordinates: pathModel.coordinates, geometry: geometry, offset: lightingOffset)
 
-            // 1. Hydraulic Drop Shadow
+            // 1. Soft depth drop shadow
             context.drawLayer { layer in
-                layer.addFilter(.shadow(color: .black.opacity(0.88), radius: cs * 0.11, x: cs * 0.055, y: cs * 0.09))
-                layer.stroke(path, with: .color(Color.black.opacity(0.88)), style: pipeStroke(width: outerWidth + cs * 0.04))
+                layer.addFilter(.shadow(color: Color.black.opacity(0.4), radius: cs * 0.08, x: 0, y: cs * 0.04))
+                layer.stroke(
+                    path,
+                    with: .color(Color.black.opacity(0.5)),
+                    style: StrokeStyle(lineWidth: outerWidth + 2, lineCap: .round, lineJoin: .round)
+                )
             }
 
-            // 2. Thick Vulcanized Outer Casing (#181E26)
+            // 2. Matte dark casing sleeve (clean, dark container)
             context.stroke(
                 path,
-                with: .color(Color(red: 9/255, green: 13/255, blue: 18/255)),
-                style: pipeStroke(width: outerWidth)
+                with: .color(PipeworkTheme.bgBase),
+                style: StrokeStyle(lineWidth: outerWidth, lineCap: .round, lineJoin: .round)
             )
 
-            // 3. Outer Casing Edge Bevel (#273240)
-            context.stroke(
-                path,
-                with: .color(Color(red: 38/255, green: 50/255, blue: 62/255)),
-                style: pipeStroke(width: shellShoulderWidth)
-            )
-
-            context.stroke(
-                litPath,
-                with: .color(Color(red: 79/255, green: 96/255, blue: 111/255).opacity(0.72)),
-                style: pipeStroke(width: shellLightWidth)
-            )
-
-            context.stroke(
-                path,
-                with: .color(Color(red: 18/255, green: 24/255, blue: 31/255)),
-                style: pipeStroke(width: shellLightWidth * 0.82)
-            )
-
-            // 4. Dark Core Bedding / Recessed Trench (#0A0D11)
-            context.stroke(
-                path,
-                with: .color(Color(red: 10/255, green: 13/255, blue: 17/255)),
-                style: pipeStroke(width: trenchWidth)
-            )
-
+            // 3. Vibrant fluid color body
             context.drawLayer { layer in
-                layer.addFilter(.shadow(color: fluidColor.opacity(isConnected ? 0.48 : 0.25), radius: cs * 0.09))
-                layer.stroke(path, with: .color(fluidColor.opacity(isConnected ? 0.62 : 0.42)), style: pipeStroke(width: fluidEdgeWidth))
+                if isConnected {
+                    layer.addFilter(.shadow(color: fluidColor.opacity(0.45), radius: cs * 0.08))
+                }
+                layer.stroke(
+                    path,
+                    with: .color(fluidColor),
+                    style: StrokeStyle(lineWidth: coreWidth, lineCap: .round, lineJoin: .round)
+                )
             }
 
+            // 4. Subtle center core luminescence
             context.stroke(
                 path,
-                with: .color(fluidColor.opacity(isConnected ? 0.68 : 0.52)),
-                style: pipeStroke(width: fluidEdgeWidth)
+                with: .color(Color.white.opacity(isConnected ? 0.35 : 0.20)),
+                style: StrokeStyle(lineWidth: innerGlowWidth, lineCap: .round, lineJoin: .round)
             )
 
-            context.stroke(
-                path,
-                with: .color(fluidColor.opacity(isConnected ? 1.0 : 0.88)),
-                style: pipeStroke(width: fluidWidth)
-            )
-
-            context.stroke(
-                litPath,
-                with: .color(Color.white.opacity(isConnected ? 0.27 : 0.20)),
-                style: pipeStroke(width: fluidLightWidth)
-            )
-
-            context.stroke(
-                litPath,
-                with: .color(Color.white.opacity(isConnected ? 0.68 : 0.48)),
-                style: StrokeStyle(lineWidth: specularWidth, lineCap: .round, lineJoin: .round, dash: [cs * 0.42, cs * 0.16], dashPhase: cs * 0.08)
-            )
-
-            // 7. Animated Fluid Pulses (when line is connected and reduceMotion is false)
+            // 5. Flowing fluid pulse dots on connected lines
             if isConnected && !reduceMotion {
-                let speed: CGFloat = 46.0
-                let cycleLength: CGFloat = cs * 2.15
+                let speed: CGFloat = 36.0
+                let cycleLength: CGFloat = cs * 1.8
                 let dashOffset = CGFloat(time * speed).truncatingRemainder(dividingBy: cycleLength)
 
                 let pulseStyle = StrokeStyle(
-                    lineWidth: cs * 0.052,
+                    lineWidth: cs * 0.08,
                     lineCap: .round,
                     lineJoin: .round,
-                    dash: [cs * 0.20, cs * 1.95],
+                    dash: [cs * 0.14, cs * 1.66],
                     dashPhase: -dashOffset
                 )
-                context.drawLayer { layer in
-                    layer.addFilter(.shadow(color: fluidColor.opacity(0.85), radius: cs * 0.055))
-                    layer.stroke(litPath, with: .color(Color.white.opacity(0.78)), style: pulseStyle)
-                }
-            }
-        }
-    }
-
-    private func pipeStroke(width: CGFloat) -> StrokeStyle {
-        StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round)
-    }
-
-    private func drawCouplings(context: GraphicsContext, geometry: BoardGeometry) {
-        let cs = geometry.cellSize
-        for pathModel in state.paths.values where pathModel.coordinates.count >= 4 {
-            for index in 1..<(pathModel.coordinates.count - 1) where index % 3 == 1 {
-                let previous = pathModel.coordinates[index - 1]
-                let current = pathModel.coordinates[index]
-                let next = pathModel.coordinates[index + 1]
-                guard previous.direction(to: current)?.axis == current.direction(to: next)?.axis else { continue }
-
-                let center = geometry.center(for: current)
-                let horizontal = previous.y == current.y
-                let bandRect = CGRect(
-                    x: center.x - (horizontal ? cs * 0.07 : cs * 0.245),
-                    y: center.y - (horizontal ? cs * 0.245 : cs * 0.07),
-                    width: horizontal ? cs * 0.14 : cs * 0.49,
-                    height: horizontal ? cs * 0.49 : cs * 0.14
+                context.stroke(
+                    path,
+                    with: .color(Color.white.opacity(0.65)),
+                    style: pulseStyle
                 )
-                let band = Path(roundedRect: bandRect, cornerRadius: cs * 0.045)
-                context.drawLayer { layer in
-                    layer.addFilter(.shadow(color: .black.opacity(0.72), radius: 2, x: 1.5, y: 2.5))
-                    layer.fill(
-                        band,
-                        with: .linearGradient(
-                            Gradient(colors: [
-                                Color(red: 20/255, green: 27/255, blue: 34/255),
-                                Color(red: 101/255, green: 119/255, blue: 135/255),
-                                Color(red: 39/255, green: 50/255, blue: 61/255),
-                                Color(red: 11/255, green: 15/255, blue: 20/255)
-                            ]),
-                            startPoint: CGPoint(x: bandRect.minX, y: bandRect.minY),
-                            endPoint: CGPoint(x: bandRect.maxX, y: bandRect.maxY)
-                        )
-                    )
-                }
-                context.stroke(band, with: .color(Color.black.opacity(0.8)), lineWidth: 1)
-                let highlightInset = horizontal
-                    ? CGRect(x: bandRect.minX + 2, y: bandRect.minY + 1, width: max(0, bandRect.width - 4), height: 1)
-                    : CGRect(x: bandRect.minX + 1, y: bandRect.minY + 2, width: 1, height: max(0, bandRect.height - 4))
-                context.fill(Path(highlightInset), with: .color(Color.white.opacity(0.38)))
             }
         }
     }
 
-    // MARK: - 4. Active Dragging Nozzle & Elastic Tether
+    // MARK: - 4. Active Dragging Tether & Fluid Head
 
-    private func drawActiveDragNozzle(context: GraphicsContext, geometry: BoardGeometry) {
+    private func drawActiveDragTether(context: GraphicsContext, geometry: BoardGeometry) {
         guard let activeLineId = state.activeLineId,
               let activePath = state.paths[activeLineId],
               let headCoord = activePath.head,
@@ -404,24 +300,12 @@ public struct BoardCanvasView: View {
         let headCenter = geometry.center(for: headCoord)
         let fluidColor = PipeworkTheme.fluidColor(for: activePath.fluidType)
 
-        let nozzleRadius = cs * 0.32
-        let nozzleRect = CGRect(
-            x: headCenter.x - nozzleRadius,
-            y: headCenter.y - nozzleRadius,
-            width: nozzleRadius * 2,
-            height: nozzleRadius * 2
-        )
-        context.stroke(
-            Path(ellipseIn: nozzleRect),
-            with: .color(fluidColor),
-            lineWidth: 2.5
-        )
-
+        // Elastic follow tether if pointer is displaced
         if let pointer = dragPointerLocation {
             let dx = pointer.x - headCenter.x
             let dy = pointer.y - headCenter.y
             let dist = hypot(dx, dy)
-            let maxTether = cs * 0.45
+            let maxTether = cs * 0.55
             let factor = dist > 0 ? min(1.0, maxTether / dist) : 0
 
             var tetherPath = Path()
@@ -430,19 +314,30 @@ public struct BoardCanvasView: View {
 
             context.stroke(
                 tetherPath,
-                with: .color(fluidColor.opacity(0.7)),
-                style: StrokeStyle(lineWidth: cs * 0.12, lineCap: .round)
+                with: .color(fluidColor.opacity(0.6)),
+                style: StrokeStyle(lineWidth: cs * 0.20, lineCap: .round)
+            )
+        }
+
+        // Active glowing head ring
+        let ringRadius = cs * 0.30
+        let ringRect = CGRect(x: headCenter.x - ringRadius, y: headCenter.y - ringRadius, width: ringRadius * 2, height: ringRadius * 2)
+        context.drawLayer { layer in
+            layer.addFilter(.shadow(color: fluidColor.opacity(0.6), radius: 6))
+            layer.stroke(
+                Path(ellipseIn: ringRect),
+                with: .color(Color.white),
+                lineWidth: 2.5
             )
         }
     }
 
-    // MARK: - 5. Machined Metal Terminal Sockets
+    // MARK: - 5. Concentric Modern Terminal Sockets
 
-    private func drawSockets(context: GraphicsContext, geometry: BoardGeometry) {
+    private func drawTerminalSockets(context: GraphicsContext, geometry: BoardGeometry) {
         let cs = geometry.cellSize
-        let outerR = cs * 0.38
-        let cavityR = cs * 0.27
-        let coreR = cs * 0.16
+        let outerR = cs * 0.36
+        let coreR = cs * 0.22
 
         for terminal in state.terminals {
             let center = geometry.center(for: terminal.coord)
@@ -450,114 +345,79 @@ public struct BoardCanvasView: View {
             let isConnected = state.paths[terminal.lineId]?.isConnected ?? false
             let isCurrentActive = state.activeLineId == terminal.lineId
 
-            let shadowRect = CGRect(x: center.x - outerR, y: center.y - outerR + cs * 0.055, width: outerR * 2, height: outerR * 2)
-            context.drawLayer { layer in
-                layer.addFilter(.shadow(color: .black.opacity(0.88), radius: cs * 0.09, x: cs * 0.035, y: cs * 0.06))
-                layer.fill(Path(ellipseIn: shadowRect), with: .color(Color.black.opacity(0.75)))
-            }
-
+            // Outer dark bezel
             let outerRect = CGRect(x: center.x - outerR, y: center.y - outerR, width: outerR * 2, height: outerR * 2)
-            let flangePath = Path(ellipseIn: outerRect)
-            let flangeGradient = Gradient(colors: [
-                Color(red: 111/255, green: 129/255, blue: 145/255),
-                Color(red: 50/255, green: 63/255, blue: 77/255),
-                Color(red: 19/255, green: 26/255, blue: 34/255),
-                Color(red: 8/255, green: 12/255, blue: 17/255)
-            ])
+            let outerPath = Path(ellipseIn: outerRect)
+            
             context.fill(
-                flangePath,
-                with: .linearGradient(flangeGradient, startPoint: CGPoint(x: outerRect.minX, y: outerRect.minY), endPoint: CGPoint(x: outerRect.maxX, y: outerRect.maxY))
+                outerPath,
+                with: .color(PipeworkTheme.bgBase)
             )
-            context.stroke(flangePath, with: .color(Color(red: 96/255, green: 117/255, blue: 136/255).opacity(0.72)), lineWidth: 1.3)
-            let flangeInset = outerRect.insetBy(dx: cs * 0.055, dy: cs * 0.055)
-            context.stroke(Path(ellipseIn: flangeInset), with: .color(Color.black.opacity(0.62)), lineWidth: cs * 0.045)
             context.stroke(
-                Path(ellipseIn: flangeInset.offsetBy(dx: -cs * 0.012, dy: -cs * 0.018)),
-                with: .color(Color.white.opacity(0.16)),
-                lineWidth: 1
+                outerPath,
+                with: .color(Color.white.opacity(0.15)),
+                lineWidth: 1.5
             )
 
-            let boltCount = 6
-            let boltRadius = max(1.2, cs * 0.024)
-            for i in 0..<boltCount {
-                let angle = (Double(i) / Double(boltCount)) * 2 * .pi
-                let br = outerR * 0.8
-                let bx = center.x + CGFloat(cos(angle)) * br
-                let by = center.y + CGFloat(sin(angle)) * br
-                let bRect = CGRect(x: bx - boltRadius, y: by - boltRadius, width: boltRadius * 2, height: boltRadius * 2)
-                context.fill(
-                    Path(ellipseIn: bRect),
-                    with: .linearGradient(
-                        Gradient(colors: [Color(red: 126/255, green: 141/255, blue: 153/255), Color(red: 15/255, green: 20/255, blue: 26/255)]),
-                        startPoint: CGPoint(x: bRect.minX, y: bRect.minY),
-                        endPoint: CGPoint(x: bRect.maxX, y: bRect.maxY)
-                    )
-                )
-                context.stroke(Path(ellipseIn: bRect), with: .color(Color.black.opacity(0.8)), lineWidth: 0.7)
-            }
-
-            let cavityRect = CGRect(x: center.x - cavityR, y: center.y - cavityR, width: cavityR * 2, height: cavityR * 2)
-            let cavityPath = Path(ellipseIn: cavityRect)
-            context.fill(
-                cavityPath,
-                with: .radialGradient(
-                    Gradient(colors: [Color(red: 3/255, green: 5/255, blue: 7/255), Color(red: 17/255, green: 23/255, blue: 30/255)]),
-                    center: CGPoint(x: center.x - cavityR * 0.25, y: center.y - cavityR * 0.28),
-                    startRadius: 0,
-                    endRadius: cavityR
-                )
-            )
-            context.stroke(cavityPath, with: .color(Color.black.opacity(0.9)), lineWidth: cs * 0.045)
-
-            let coreRect = CGRect(x: center.x - coreR, y: center.y - coreR, width: coreR * 2, height: coreR * 2)
-            let corePath = Path(ellipseIn: coreRect)
-            context.drawLayer { layer in
-                layer.addFilter(.shadow(color: fluidColor.opacity(isConnected ? 0.75 : 0.42), radius: cs * 0.10))
-                layer.fill(corePath, with: .color(fluidColor.opacity(0.82)))
-            }
-            context.fill(
-                corePath,
-                with: .radialGradient(
-                    Gradient(colors: [Color.white.opacity(0.78), fluidColor, fluidColor.opacity(0.58)]),
-                    center: CGPoint(x: center.x - coreR * 0.32, y: center.y - coreR * 0.38),
-                    startRadius: 0,
-                    endRadius: coreR * 1.05
-                )
-            )
-
-            let specR = coreR * 0.38
-            let specRect = CGRect(x: center.x - coreR * 0.45, y: center.y - coreR * 0.45, width: specR, height: specR)
-            context.fill(Path(ellipseIn: specRect), with: .color(Color.white.opacity(0.66)))
-
+            // Active / Connected Glow Ring
             if isConnected || isCurrentActive {
-                let lockRingRect = CGRect(x: center.x - cavityR - 1.5, y: center.y - cavityR - 1.5, width: (cavityR + 1.5) * 2, height: (cavityR + 1.5) * 2)
+                let lockRingRect = outerRect.insetBy(dx: -2.5, dy: -2.5)
                 context.drawLayer { layer in
-                    layer.addFilter(.shadow(color: fluidColor.opacity(0.75), radius: cs * 0.065))
-                    layer.stroke(Path(ellipseIn: lockRingRect), with: .color(fluidColor.opacity(0.92)), lineWidth: max(1.5, cs * 0.035))
+                    layer.addFilter(.shadow(color: fluidColor.opacity(0.6), radius: 6))
+                    layer.stroke(
+                        Path(ellipseIn: lockRingRect),
+                        with: .color(fluidColor.opacity(0.85)),
+                        lineWidth: 2.0
+                    )
                 }
             }
 
+            // Inner Vibrant Fluid Core
+            let coreRect = CGRect(x: center.x - coreR, y: center.y - coreR, width: coreR * 2, height: coreR * 2)
+            let corePath = Path(ellipseIn: coreRect)
+
+            context.drawLayer { layer in
+                if isConnected {
+                    layer.addFilter(.shadow(color: fluidColor.opacity(0.5), radius: 6))
+                }
+                context.fill(
+                    corePath,
+                    with: .color(fluidColor)
+                )
+            }
+
+            // Clean white specular highlight dot
+            let specSize = coreR * 0.45
+            let specRect = CGRect(x: center.x - specSize / 2, y: center.y - coreR * 0.55, width: specSize, height: specSize)
+            context.fill(
+                Path(ellipseIn: specRect),
+                with: .color(Color.white.opacity(0.35))
+            )
+
+            // Optional accessibility symbol
             if showAccessibilitySymbols {
                 let symbol = terminal.fluidType.symbolCode
                 let text = Text(symbol)
-                    .font(PipeworkTheme.monoFont(size: cs * 0.22, weight: .bold))
-                    .foregroundColor(Color.black)
+                    .font(PipeworkTheme.headingFont(size: cs * 0.22, weight: .bold))
+                    .foregroundColor(Color.black.opacity(0.85))
                 context.draw(text, at: center)
             }
         }
     }
 
-    // MARK: - 6. Blocked Feedback Shockwave
+    // MARK: - 6. Blocked Warning Feedback
 
-    private func drawBlockedFeedback(context: GraphicsContext, geometry: BoardGeometry) {
+    private func drawBlockedIndicator(context: GraphicsContext, geometry: BoardGeometry) {
         guard let blocked = localBlockedCoord else { return }
         let center = geometry.center(for: blocked)
         let cs = geometry.cellSize
 
-        let circlePath = Path(ellipseIn: CGRect(x: center.x - cs * 0.44, y: center.y - cs * 0.44, width: cs * 0.88, height: cs * 0.88))
-        context.fill(circlePath, with: .color(PipeworkTheme.warningRed.opacity(0.35)))
-        context.stroke(circlePath, with: .color(PipeworkTheme.warningRed), lineWidth: 2)
+        let circlePath = Path(ellipseIn: CGRect(x: center.x - cs * 0.42, y: center.y - cs * 0.42, width: cs * 0.84, height: cs * 0.84))
+        context.fill(circlePath, with: .color(PipeworkTheme.warningRed.opacity(0.22)))
+        context.stroke(circlePath, with: .color(PipeworkTheme.warningRed), lineWidth: 2.0)
     }
+
+    // MARK: - Path Interpolation
 
     private func buildContinuousPath(
         coordinates: [GridCoord],
@@ -571,7 +431,7 @@ public struct BoardCanvasView: View {
             let center = geometry.center(for: coord)
             return CGPoint(x: center.x + offset.width, y: center.y + offset.height)
         }
-        let radius = geometry.cellSize * 0.31
+        let radius = geometry.cellSize * 0.32
         path.move(to: points[0])
 
         if points.count == 2 {

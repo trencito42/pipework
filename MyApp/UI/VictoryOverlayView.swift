@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Victory modal celebrating a 100% full-board solved state.
+/// Elegant, premium victory modal celebrating a 100% full-board solved state.
 public struct VictoryOverlayView: View {
     public let levelTitle: String
     public let moves: Int
@@ -30,158 +30,140 @@ public struct VictoryOverlayView: View {
 
     public var body: some View {
         ZStack {
-            // Semi-transparent backdrop
-            Color.black.opacity(0.75)
+            // Calm deep backdrop
+            Color.black.opacity(0.78)
                 .ignoresSafeArea()
 
             VStack(spacing: 20) {
-                // Glow status icon
+                // Glowing Victory Icon
                 ZStack {
                     Circle()
                         .fill(PipeworkTheme.pressureGreen.opacity(0.15))
-                        .frame(width: 72, height: 72)
+                        .frame(width: 52, height: 52)
+
                     Circle()
-                        .fill(PipeworkTheme.pressureGreen)
-                        .frame(width: 24, height: 24)
-                        .shadow(color: PipeworkTheme.pressureGreen, radius: 12)
+                        .stroke(PipeworkTheme.pressureGreen.opacity(0.4), lineWidth: 1.5)
+                        .frame(width: 52, height: 52)
+
                     Image(systemName: "checkmark")
-                        .font(.system(size: 13, weight: .black))
-                        .foregroundColor(Color(red: 4/255, green: 20/255, blue: 10/255))
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(PipeworkTheme.pressureGreen)
                 }
 
+                // Title & Subtitle
                 VStack(spacing: 4) {
                     Text("SYSTEM RESTORED")
-                        .font(PipeworkTheme.monoFont(size: 12, weight: .bold))
+                        .font(PipeworkTheme.captionFont(size: 11, weight: .bold))
                         .foregroundColor(PipeworkTheme.pressureGreen)
-                        .tracking(2.0)
+                        .tracking(1.8)
 
                     Text(levelTitle)
-                        .font(.system(size: 22, weight: .bold))
+                        .font(PipeworkTheme.titleFont(size: 24, weight: .bold))
                         .foregroundColor(PipeworkTheme.textMain)
                 }
 
-                HStack(spacing: 6) {
+                // 3 Stars Display
+                HStack(spacing: 8) {
                     ForEach(1...3, id: \.self) { star in
                         Image(systemName: star <= (outcome?.stars ?? 1) ? "star.fill" : "star")
-                            .font(.system(size: 23, weight: .semibold))
-                            .foregroundColor(star <= (outcome?.stars ?? 1) ? PipeworkTheme.primaryCyan : PipeworkTheme.textDim)
+                            .font(.system(size: 26, weight: .semibold))
+                            .foregroundColor(star <= (outcome?.stars ?? 1) ? PipeworkTheme.goldStar : PipeworkTheme.textDim.opacity(0.4))
                     }
                 }
 
+                // Special Outcome Badge
                 if outcome?.isPerfect == true {
                     Text("PERFECT ROUTING")
-                        .font(PipeworkTheme.monoFont(size: 11, weight: .bold))
+                        .font(PipeworkTheme.captionFont(size: 11, weight: .bold))
                         .foregroundColor(PipeworkTheme.primaryCyan)
-                        .tracking(1.4)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(PipeworkTheme.primaryCyan.opacity(0.12))
+                                .overlay(Capsule().stroke(PipeworkTheme.primaryCyan.opacity(0.3), lineWidth: 1))
+                        )
                 } else if outcome?.isNewBest == true {
-                    Text("NEW BEST")
-                        .font(PipeworkTheme.monoFont(size: 11, weight: .bold))
+                    Text("NEW BEST RECORD")
+                        .font(PipeworkTheme.captionFont(size: 11, weight: .bold))
                         .foregroundColor(PipeworkTheme.primaryCyan)
-                        .tracking(1.4)
-                } else if outcome?.isAssisted == true {
-                    Text("ASSISTED SOLVE")
-                        .font(PipeworkTheme.monoFont(size: 11, weight: .bold))
-                        .foregroundColor(PipeworkTheme.textMuted)
-                        .tracking(1.2)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(PipeworkTheme.primaryCyan.opacity(0.12))
+                                .overlay(Capsule().stroke(PipeworkTheme.primaryCyan.opacity(0.3), lineWidth: 1))
+                        )
                 }
 
-                // Stats card
-                HStack(spacing: 20) {
-                    VStack(spacing: 2) {
-                        Text("MOVES")
-                            .font(PipeworkTheme.monoFont(size: 10, weight: .bold))
-                            .foregroundColor(PipeworkTheme.textMuted)
-                        Text("\(moves)")
-                            .font(.system(size: 22, weight: .heavy, design: .rounded))
-                            .foregroundColor(PipeworkTheme.primaryCyan)
-                    }
+                // Stats Row
+                HStack(spacing: 0) {
+                    statPillar(label: "MOVES", value: "\(moves)")
+                    
+                    Rectangle()
+                        .fill(PipeworkTheme.borderSubtle)
+                        .frame(width: 1, height: 28)
 
-                    VStack(spacing: 2) {
-                        Text("PAR")
-                            .font(PipeworkTheme.monoFont(size: 10, weight: .bold))
-                            .foregroundColor(PipeworkTheme.textMuted)
-                        Text("\(parMoves)")
-                            .font(.system(size: 22, weight: .heavy, design: .rounded))
-                            .foregroundColor(PipeworkTheme.textMain)
-                    }
+                    statPillar(label: "PAR", value: "\(parMoves)")
 
                     if let best = outcome?.bestMoves {
-                        Divider()
-                            .frame(height: 28)
-                            .background(PipeworkTheme.borderDim)
+                        Rectangle()
+                            .fill(PipeworkTheme.borderSubtle)
+                            .frame(width: 1, height: 28)
 
-                        VStack(spacing: 2) {
-                            Text("BEST")
-                                .font(PipeworkTheme.monoFont(size: 10, weight: .bold))
-                                .foregroundColor(PipeworkTheme.textMuted)
-                            Text("\(best)")
-                                .font(.system(size: 22, weight: .heavy, design: .rounded))
-                                .foregroundColor(PipeworkTheme.primaryCyan)
-                        }
+                        statPillar(label: "BEST", value: "\(best)")
                     }
                 }
-                .padding(.vertical, 12)
-                .padding(.horizontal, 24)
+                .padding(.vertical, 10)
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(PipeworkTheme.panelSubtle)
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(PipeworkTheme.borderDim, lineWidth: 1))
+                    RoundedRectangle(cornerRadius: PipeworkTheme.radiusMedium)
+                        .fill(PipeworkTheme.surfaceCard)
+                        .overlay(RoundedRectangle(cornerRadius: PipeworkTheme.radiusMedium).stroke(PipeworkTheme.borderSubtle, lineWidth: 1))
                 )
 
-                // Actions
+                // CTAs
                 VStack(spacing: 10) {
                     Button(action: onNextLevel) {
-                        Text("Next Level")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(Color(red: 4/255, green: 20/255, blue: 10/255))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(PipeworkTheme.pressureGreen)
-                            )
-                            .shadow(color: PipeworkTheme.pressureGreen.opacity(0.35), radius: 8, y: 3)
+                        HStack(spacing: 8) {
+                            Text("Next Level")
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 14, weight: .bold))
+                        }
                     }
+                    .buttonStyle(PipeworkPillButtonStyle(variant: .primary))
 
                     HStack(spacing: 12) {
-                        Button(action: onReplay) {
-                            Text("Replay")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(PipeworkTheme.textMain)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .fill(PipeworkTheme.panelBase)
-                                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(PipeworkTheme.borderDim, lineWidth: 1))
-                                )
-                        }
+                        Button("Replay", action: onReplay)
+                            .buttonStyle(PipeworkPillButtonStyle(variant: .secondary))
 
-                        Button(action: onLevels) {
-                            Text("Levels")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(PipeworkTheme.textMain)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .fill(PipeworkTheme.panelBase)
-                                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(PipeworkTheme.borderDim, lineWidth: 1))
-                                )
-                        }
+                        Button("Levels", action: onLevels)
+                            .buttonStyle(PipeworkPillButtonStyle(variant: .subtle))
                     }
                 }
             }
             .padding(24)
             .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(PipeworkTheme.panelBase)
+                RoundedRectangle(cornerRadius: PipeworkTheme.radiusLarge)
+                    .fill(PipeworkTheme.bgElevated)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 20)
-                            .stroke(PipeworkTheme.borderBright, lineWidth: 1.5)
+                        RoundedRectangle(cornerRadius: PipeworkTheme.radiusLarge)
+                            .stroke(PipeworkTheme.borderDefault, lineWidth: 1)
                     )
             )
-            .padding(.horizontal, 32)
+            .padding(.horizontal, 28)
         }
+    }
+
+    private func statPillar(label: String, value: String) -> some View {
+        VStack(spacing: 2) {
+            Text(label)
+                .font(PipeworkTheme.captionFont(size: 9, weight: .bold))
+                .foregroundColor(PipeworkTheme.textMuted)
+                .tracking(1.0)
+            Text(value)
+                .font(PipeworkTheme.statNumberFont(size: 20, weight: .bold))
+                .foregroundColor(PipeworkTheme.textMain)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
