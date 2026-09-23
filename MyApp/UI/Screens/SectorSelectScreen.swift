@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Clean, lightweight level browser displaying pack segments and compact level tiles with swipe gesture support.
+/// Clean, lightweight level browser with native interactive iOS page-swipe physics between packs.
 public struct SectorSelectScreen: View {
     @ObservedObject private var persistence = PersistenceService.shared
     @State private var selectedPackIndex: Int = 0
@@ -21,20 +21,13 @@ public struct SectorSelectScreen: View {
         packs[selectedPackIndex]
     }
 
-    private var chapters: [LevelChapter] {
-        stride(from: 0, to: currentPack.levels.count, by: 10).map { start in
-            let end = min(start + 10, currentPack.levels.count)
-            return LevelChapter(number: start / 10 + 1, levels: Array(currentPack.levels[start..<end]))
-        }
-    }
-
     public var body: some View {
         ZStack {
             PipeworkTheme.bgBase
                 .ignoresSafeArea()
 
-            VStack(spacing: 16) {
-                // Top Navigation Bar
+            VStack(spacing: 14) {
+                // 1. Top Navigation Bar
                 HStack {
                     Button(action: {
                         HapticService.shared.buttonTap()
@@ -86,12 +79,12 @@ public struct SectorSelectScreen: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
 
-                // Refined Segmented Control
+                // 2. Refined Segmented Control
                 HStack(spacing: 4) {
                     ForEach(Array(packs.enumerated()), id: \.offset) { index, pack in
                         Button(action: {
                             HapticService.shared.buttonTap()
-                            withAnimation(.easeInOut(duration: 0.22)) {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                                 selectedPackIndex = index
                             }
                         }) {
@@ -115,57 +108,46 @@ public struct SectorSelectScreen: View {
                 )
                 .padding(.horizontal, 20)
 
-                // Lightweight Level Grid with Horizontal Swipe Detection
-                ScrollView {
-                    LazyVStack(spacing: 24) {
-                        ForEach(chapters) { chapter in
-                            VStack(alignment: .leading, spacing: 10) {
-                                chapterHeader(chapter)
+                // 3. Native Interactive Paged TabView
+                TabView(selection: $selectedPackIndex) {
+                    ForEach(Array(packs.enumerated()), id: \.offset) { packIdx, pack in
+                        packLevelGridView(pack: pack)
+                            .tag(packIdx)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .onChange(of: selectedPackIndex) { _, _ in
+                    HapticService.shared.buttonTap()
+                }
+            }
+        }
+    }
 
-                                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 5), spacing: 10) {
-                                    ForEach(chapter.levels) { level in
-                                        compactLevelTile(level: level)
-                                    }
-                                }
+    // MARK: - Level Grid for a specific pack
+
+    private func packLevelGridView(pack: LevelPack) -> some View {
+        let chapters = stride(from: 0, to: pack.levels.count, by: 10).map { start in
+            let end = min(start + 10, pack.levels.count)
+            return LevelChapter(number: start / 10 + 1, levels: Array(pack.levels[start..<end]))
+        }
+
+        return ScrollView {
+            LazyVStack(spacing: 24) {
+                ForEach(chapters) { chapter in
+                    VStack(alignment: .leading, spacing: 10) {
+                        chapterHeader(chapter)
+
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 5), spacing: 10) {
+                            ForEach(chapter.levels) { level in
+                                compactLevelTile(pack: pack, level: level)
                             }
                         }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 28)
                 }
-                .gesture(
-                    DragGesture(minimumDistance: 25, coordinateSpace: .local)
-                        .onEnded { value in
-                            let hTranslation = value.translation.width
-                            let vTranslation = value.translation.height
-
-                            // Only trigger when the horizontal swipe is dominant
-                            guard abs(hTranslation) > abs(vTranslation) * 1.3 else { return }
-
-                            if hTranslation < -40 {
-                                // Swiped Left -> Go to next pack (e.g. 5x5 -> 6x6 -> 7x7)
-                                if selectedPackIndex + 1 < packs.count {
-                                    HapticService.shared.buttonTap()
-                                    withAnimation(.easeInOut(duration: 0.25)) {
-                                        selectedPackIndex += 1
-                                    }
-                                }
-                            } else if hTranslation > 40 {
-                                // Swiped Right -> Go to previous pack or Exit to Menu
-                                if selectedPackIndex > 0 {
-                                    HapticService.shared.buttonTap()
-                                    withAnimation(.easeInOut(duration: 0.25)) {
-                                        selectedPackIndex -= 1
-                                    }
-                                } else {
-                                    // At the first pack (5x5), swiping right exits back to Menu
-                                    HapticService.shared.buttonTap()
-                                    onBack()
-                                }
-                            }
-                        }
-                )
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 4)
+            .padding(.bottom, 28)
         }
     }
 
@@ -184,7 +166,7 @@ public struct SectorSelectScreen: View {
         }
     }
 
-    private func compactLevelTile(level: LevelDefinition) -> some View {
+    private func compactLevelTile(pack: LevelPack, level: LevelDefinition) -> some View {
         let record = persistence.getRecord(for: level.id)
         let isCompleted = record?.isCompleted ?? false
         let stars = record?.starsEarned ?? 0
@@ -194,7 +176,7 @@ public struct SectorSelectScreen: View {
         return Button(action: {
             guard isUnlocked else { return }
             HapticService.shared.buttonTap()
-            onSelectLevel(currentPack, level)
+            onSelectLevel(pack, level)
         }) {
             VStack(spacing: 4) {
                 if !isUnlocked {
