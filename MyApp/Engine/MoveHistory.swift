@@ -57,6 +57,13 @@ public struct MoveHistory: Sendable {
         transactionSnapshot = nil
     }
 
+    /// Atomically rolls back the active transaction and returns the pre-stroke snapshot.
+    public mutating func rollbackTransaction() -> PuzzleState? {
+        let snapshot = transactionSnapshot
+        transactionSnapshot = nil
+        return snapshot
+    }
+
     /// Reverts to the previous state prior to the last committed gesture.
     public mutating func undo(currentState: PuzzleState) -> PuzzleState? {
         guard let previous = undoStack.popLast() else { return nil }

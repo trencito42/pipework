@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// Main native interactive gameplay screen for PIPEWORK.
+@MainActor
 public struct GameplayScreen: View {
     @ObservedObject private var persistence = PersistenceService.shared
 
@@ -16,7 +17,6 @@ public struct GameplayScreen: View {
     @State private var isVictoryPresented: Bool = false
     @State private var toastMessage: String? = nil
     @State private var toastWorkItem: DispatchWorkItem? = nil
-    @State private var blockedCoord: GridCoord? = nil
     @State private var isSettingsOpen: Bool = false
 
     public init(
@@ -66,8 +66,7 @@ public struct GameplayScreen: View {
                         history: $history,
                         showAccessibilitySymbols: persistence.profile.accessibilitySymbolsEnabled,
                         reduceMotion: persistence.profile.reduceMotionEnabled,
-                        blockedCoord: blockedCoord,
-                        onBlockedCoordHandled: { blockedCoord = nil }
+                        onStrokeCommitted: handleStrokeCommitted
                     )
                     .aspectRatio(1.0, contentMode: .fit)
                     .padding(.horizontal, 16)
@@ -111,22 +110,12 @@ public struct GameplayScreen: View {
                     bestMoves: bestMoves,
                     onNextLevel: loadNextLevel,
                     onReplay: restartLevelAction,
-                    onLevels: onOpenLevelSelect
+                    onLevels: {
+                        HapticService.shared.buttonTap()
+                        onOpenLevelSelect()
+                    }
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
-            }
-        }
-        .onChange(of: puzzleState.isSolved) { _, isSolved in
-            if isSolved {
-                persistence.recordLevelCompletion(
-                    levelId: currentLevel.id,
-                    moves: puzzleState.moveCount,
-                    parMoves: currentLevel.parMoves
-                )
-
-                withAnimation(.spring(duration: 0.4)) {
-                    isVictoryPresented = true
-                }
             }
         }
         .sheet(isPresented: $isSettingsOpen) {
@@ -138,7 +127,10 @@ public struct GameplayScreen: View {
 
     private var headerZone: some View {
         HStack {
-            Button(action: onOpenLevelSelect) {
+            Button(action: {
+                HapticService.shared.buttonTap()
+                onOpenLevelSelect()
+            }) {
                 HStack(spacing: 5) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 13, weight: .bold))
@@ -180,7 +172,10 @@ public struct GameplayScreen: View {
                         .background(RoundedRectangle(cornerRadius: 8).fill(PipeworkTheme.panelBase))
                 }
 
-                Button(action: { isSettingsOpen = true }) {
+                Button(action: {
+                    HapticService.shared.buttonTap()
+                    isSettingsOpen = true
+                }) {
                     Image(systemName: "gearshape.fill")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(PipeworkTheme.textMuted)
@@ -201,7 +196,7 @@ public struct GameplayScreen: View {
             tacticalRoundButton(
                 iconName: "arrow.uturn.backward",
                 label: "Undo",
-                disabled: !history.canUndo,
+                disabled: !history.canUndo || isVictoryPresented,
                 action: undoAction
             )
 
@@ -255,19 +250,37 @@ public struct GameplayScreen: View {
         .buttonStyle(TactileButtonStyle())
     }
 
+    // MARK: - Stroke & Victory Coordination
+
+    private func handleStrokeCommitted(_ result: StrokeCommitResult) {
+        if result.isPuzzleSolved {
+            persistence.recordLevelCompletion(
+                levelId: currentLevel.id,
+                moves: puzzleState.moveCount,
+                parMoves: currentLevel.parMoves
+            )
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                withAnimation(.spring(duration: 0.4)) {
+                    isVictoryPresented = true
+                }
+            }
+        }
+    }
+
     // MARK: - Actions
 
     private func toggleSound() {
         let newSound = !persistence.profile.soundEnabled
         persistence.updateSettings(sound: newSound)
-        HapticService.shared.terminalTouchDown()
+        HapticService.shared.buttonTap()
     }
 
     private func undoAction() {
         if let previous = history.undo(currentState: puzzleState) {
             puzzleState = previous
-            AudioService.shared.playRouteCut()
-            HapticService.shared.lineCut()
+            AudioService.shared.playUndo()
+            HapticService.shared.undo()
         }
     }
 
@@ -290,6 +303,9 @@ public struct GameplayScreen: View {
 
         guard let target = targetDef else { return }
 
+        // Start transaction for hint
+        history.beginTransaction(with: puzzleState)
+
         // Clear conflicting lines
         let solSet = Set(target.path)
         for (lineId, path) in puzzleState.paths {
@@ -311,10 +327,18 @@ public struct GameplayScreen: View {
                 }
             }
             puzzleState.updatePath(for: target.lineId, path: path)
+            _ = history.commitTransaction(with: puzzleState)
             puzzleState.moveCount += 1
+
             AudioService.shared.playConnectionLocked()
             HapticService.shared.lineConnected()
             showToast("Hint revealed")
+
+            if puzzleState.isSolved {
+                HapticService.shared.boardCompleted()
+                AudioService.shared.playPressureStabilized()
+                handleStrokeCommitted(StrokeCommitResult(didMutate: true, didConnectLine: true, moveCountIncremented: true, isPuzzleSolved: true))
+            }
         }
     }
 
@@ -322,12 +346,13 @@ public struct GameplayScreen: View {
         puzzleState = currentLevel.createInitialState()
         history.clear()
         isVictoryPresented = false
-        AudioService.shared.playRouteCut()
-        HapticService.shared.lineCut()
+        AudioService.shared.playRestart()
+        HapticService.shared.restart()
         showToast("Level reset")
     }
 
     private func loadNextLevel() {
+        HapticService.shared.buttonTap()
         let allPacks = LevelRepository.allPacks
         let currentPackIdx = allPacks.firstIndex(where: { $0.id == currentPack.id }) ?? 0
         let currentLevelIdx = currentPack.levels.firstIndex(where: { $0.id == currentLevel.id }) ?? 0
@@ -361,8 +386,10 @@ public struct GameplayScreen: View {
             toastMessage = text
         }
         let work = DispatchWorkItem {
-            withAnimation(.easeOut(duration: 0.25)) {
-                toastMessage = nil
+            DispatchQueue.main.async {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    toastMessage = nil
+                }
             }
         }
         toastWorkItem = work

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Combine
 
 /// Records completion state and metrics for a single level.
@@ -48,25 +49,21 @@ public struct PlayerProfile: Codable, Sendable {
     )
 }
 
-/// Manages atomic JSON saving and loading of game progression.
+/// Manages persistent storage of player progress, records, and preferences.
 @MainActor
 public final class PersistenceService: ObservableObject {
     public static let shared = PersistenceService()
 
-    @Published public private(set) var profile: PlayerProfile
-
-    private let saveKey = "com.blipmade.pipework.saveData"
+    private let saveKey = "pipework_player_profile_v1"
     private let fileURL: URL
+
+    @Published public private(set) var profile: PlayerProfile
 
     private init() {
         let paths = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
         self.fileURL = paths[0].appendingPathComponent("pipework_save.json")
         let loadedProfile = Self.load(from: fileURL, saveKey: saveKey)
         self.profile = loadedProfile
-
-        // Immediately propagate loaded settings to hardware services
-        AudioService.shared.isEnabled = loadedProfile.soundEnabled
-        HapticService.shared.isEnabled = loadedProfile.hapticsEnabled
     }
 
     private static func load(from url: URL, saveKey: String) -> PlayerProfile {
@@ -134,11 +131,9 @@ public final class PersistenceService: ObservableObject {
     ) {
         if let s = sound {
             profile.soundEnabled = s
-            AudioService.shared.isEnabled = s
         }
         if let h = haptics {
             profile.hapticsEnabled = h
-            HapticService.shared.isEnabled = h
         }
         if let a = accessibility {
             profile.accessibilitySymbolsEnabled = a
@@ -151,8 +146,6 @@ public final class PersistenceService: ObservableObject {
 
     public func resetProgress() {
         profile = .initial
-        AudioService.shared.isEnabled = profile.soundEnabled
-        HapticService.shared.isEnabled = profile.hapticsEnabled
         save()
     }
 }

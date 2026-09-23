@@ -23,21 +23,25 @@ public struct SettingsScreen: View {
                     Section(header: Text("Gameplay").foregroundColor(PipeworkTheme.textMuted)) {
                         Toggle("Sound", isOn: $soundEnabled)
                             .onChange(of: soundEnabled) { _, val in
+                                HapticService.shared.buttonTap()
                                 persistence.updateSettings(sound: val)
                             }
 
                         Toggle("Haptics", isOn: $hapticsEnabled)
                             .onChange(of: hapticsEnabled) { _, val in
+                                HapticService.shared.buttonTap()
                                 persistence.updateSettings(haptics: val)
                             }
 
                         Toggle("Color Labels", isOn: $colorLabelsEnabled)
                             .onChange(of: colorLabelsEnabled) { _, val in
+                                HapticService.shared.buttonTap()
                                 persistence.updateSettings(accessibility: val)
                             }
 
                         Toggle("Reduce Motion", isOn: $reduceMotionEnabled)
                             .onChange(of: reduceMotionEnabled) { _, val in
+                                HapticService.shared.buttonTap()
                                 persistence.updateSettings(reduceMotion: val)
                             }
                     }
@@ -45,7 +49,10 @@ public struct SettingsScreen: View {
                     .foregroundColor(PipeworkTheme.textMain)
 
                     Section {
-                        Button(role: .destructive, action: { isShowingResetAlert = true }) {
+                        Button(role: .destructive, action: {
+                            HapticService.shared.buttonTap()
+                            isShowingResetAlert = true
+                        }) {
                             Text("Reset Progress")
                                 .foregroundColor(PipeworkTheme.warningRed)
                         }
@@ -59,6 +66,7 @@ public struct SettingsScreen: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
+                        HapticService.shared.buttonTap()
                         dismiss()
                     }
                     .font(.system(size: 16, weight: .bold))
@@ -66,8 +74,11 @@ public struct SettingsScreen: View {
                 }
             }
             .alert("Reset Progress", isPresented: $isShowingResetAlert) {
-                Button("Cancel", role: .cancel) {}
+                Button("Cancel", role: .cancel) {
+                    HapticService.shared.buttonTap()
+                }
                 Button("Reset", role: .destructive) {
+                    HapticService.shared.restart()
                     persistence.resetProgress()
                     soundEnabled = persistence.profile.soundEnabled
                     hapticsEnabled = persistence.profile.hapticsEnabled

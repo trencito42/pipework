@@ -218,10 +218,10 @@ public struct EngineTests {
         }
 
         // ==========================================
-        // 3. TRANSACTION & UNDO TESTS
+        // 3. COMPREHENSIVE INTERACTION & STROKE LIFECYCLE REGRESSIONS
         // ==========================================
 
-        // No-op touch = 0 moves
+        // R1: Tap on empty cell produces 0 moves and 0 mutations
         do {
             let terminals = [
                 Terminal(id: "c_A", lineId: "coolant", fluidType: .coolant, coord: GridCoord(x: 0, y: 0), isPrimarySocket: true),
@@ -232,15 +232,170 @@ public struct EngineTests {
             let interpreter = GridGestureInterpreter()
             let geometry = BoardGeometry(gridSize: state.gridSize, containerSize: CGSize(width: 300, height: 300), margin: 0)
 
-            let p0 = geometry.center(for: GridCoord(x: 0, y: 0))
-            interpreter.beginStroke(at: p0, geometry: geometry, state: &state, history: &history)
-            interpreter.endStroke(state: &state, history: &history)
+            let emptyPoint = geometry.center(for: GridCoord(x: 1, y: 1))
+            interpreter.beginStroke(at: emptyPoint, geometry: geometry, state: &state, history: &history)
+            let result = interpreter.endStroke(at: emptyPoint, geometry: geometry, state: &state, history: &history)
 
-            verify(state.moveCount == 0, "No-op touch produces 0 moves")
-            verify(!history.canUndo, "No-op touch does not create undo entry")
+            verify(result.didMutate == false, "R1: Tap on empty cell did not mutate")
+            verify(state.moveCount == 0, "R1: Tap on empty cell produces 0 moves")
+            verify(!history.canUndo, "R1: Tap on empty cell leaves undo stack empty")
         }
 
-        // Complex gesture = 1 move; Undo restores full state
+        // R2: Tap on terminal without movement produces 0 moves and keeps original state
+        do {
+            let terminals = [
+                Terminal(id: "c_A", lineId: "coolant", fluidType: .coolant, coord: GridCoord(x: 0, y: 0), isPrimarySocket: true),
+                Terminal(id: "c_B", lineId: "coolant", fluidType: .coolant, coord: GridCoord(x: 2, y: 0), isPrimarySocket: false)
+            ]
+            var state = PuzzleState(gridSize: GridSize(dimension: 3), terminals: terminals)
+            var history = MoveHistory()
+            let interpreter = GridGestureInterpreter()
+            let geometry = BoardGeometry(gridSize: state.gridSize, containerSize: CGSize(width: 300, height: 300), margin: 0)
+
+            let termPoint = geometry.center(for: GridCoord(x: 0, y: 0))
+            interpreter.beginStroke(at: termPoint, geometry: geometry, state: &state, history: &history)
+            verify(interpreter.phase != .idle, "R2: Interpreter armed on terminal")
+            let result = interpreter.endStroke(at: termPoint, geometry: geometry, state: &state, history: &history)
+
+            verify(result.didMutate == false, "R2: Tap on terminal did not mutate")
+            verify(state.moveCount == 0, "R2: Tap on terminal produces 0 moves")
+            verify(!history.canUndo, "R2: Tap on terminal leaves undo stack empty")
+            verify(state.paths["coolant"]?.coordinates.isEmpty == true, "R2: Path was not prematurely created")
+        }
+
+        // R3: Tap on completed line terminal without movement keeps line intact with 0 moves
+        do {
+            let terminals = [
+                Terminal(id: "c_A", lineId: "coolant", fluidType: .coolant, coord: GridCoord(x: 0, y: 0), isPrimarySocket: true),
+                Terminal(id: "c_B", lineId: "coolant", fluidType: .coolant, coord: GridCoord(x: 2, y: 0), isPrimarySocket: false)
+            ]
+            var state = PuzzleState(gridSize: GridSize(dimension: 3), terminals: terminals)
+            var path = state.paths["coolant"]!
+            path.start(at: GridCoord(x: 0, y: 0))
+            path.append(GridCoord(x: 1, y: 0))
+            path.append(GridCoord(x: 2, y: 0))
+            state.updatePath(for: "coolant", path: path)
+
+            var history = MoveHistory()
+            let interpreter = GridGestureInterpreter()
+            let geometry = BoardGeometry(gridSize: state.gridSize, containerSize: CGSize(width: 300, height: 300), margin: 0)
+
+            let p0 = geometry.center(for: GridCoord(x: 0, y: 0))
+            interpreter.beginStroke(at: p0, geometry: geometry, state: &state, history: &history)
+            let result = interpreter.endStroke(at: p0, geometry: geometry, state: &state, history: &history)
+
+            verify(result.didMutate == false, "R3: Tap on completed line terminal did not mutate")
+            verify(state.moveCount == 0, "R3: Tap on completed line terminal produces 0 moves")
+            verify(state.paths["coolant"]?.isConnected == true, "R3: Completed line remained connected")
+            verify(state.paths["coolant"]?.coordinates.count == 3, "R3: Completed line coordinates preserved")
+        }
+
+        // R4: Tap on middle of completed line without movement preserves line with 0 moves
+        do {
+            let terminals = [
+                Terminal(id: "c_A", lineId: "coolant", fluidType: .coolant, coord: GridCoord(x: 0, y: 0), isPrimarySocket: true),
+                Terminal(id: "c_B", lineId: "coolant", fluidType: .coolant, coord: GridCoord(x: 2, y: 0), isPrimarySocket: false)
+            ]
+            var state = PuzzleState(gridSize: GridSize(dimension: 3), terminals: terminals)
+            var path = state.paths["coolant"]!
+            path.start(at: GridCoord(x: 0, y: 0))
+            path.append(GridCoord(x: 1, y: 0))
+            path.append(GridCoord(x: 2, y: 0))
+            state.updatePath(for: "coolant", path: path)
+
+            var history = MoveHistory()
+            let interpreter = GridGestureInterpreter()
+            let geometry = BoardGeometry(gridSize: state.gridSize, containerSize: CGSize(width: 300, height: 300), margin: 0)
+
+            let midPoint = geometry.center(for: GridCoord(x: 1, y: 0))
+            interpreter.beginStroke(at: midPoint, geometry: geometry, state: &state, history: &history)
+            let result = interpreter.endStroke(at: midPoint, geometry: geometry, state: &state, history: &history)
+
+            verify(result.didMutate == false, "R4: Tap on middle of completed line did not mutate")
+            verify(state.moveCount == 0, "R4: Tap on middle produces 0 moves")
+            verify(state.paths["coolant"]?.isConnected == true, "R4: Line remains connected")
+        }
+
+        // R5: Quick flick connecting A to B where touch ended is the only event landing inside B
+        do {
+            let terminals = [
+                Terminal(id: "c_A", lineId: "coolant", fluidType: .coolant, coord: GridCoord(x: 0, y: 0), isPrimarySocket: true),
+                Terminal(id: "c_B", lineId: "coolant", fluidType: .coolant, coord: GridCoord(x: 2, y: 0), isPrimarySocket: false)
+            ]
+            var state = PuzzleState(gridSize: GridSize(dimension: 3), terminals: terminals)
+            var history = MoveHistory()
+            let interpreter = GridGestureInterpreter()
+            let geometry = BoardGeometry(gridSize: state.gridSize, containerSize: CGSize(width: 300, height: 300), margin: 0)
+
+            let pA = geometry.center(for: GridCoord(x: 0, y: 0))
+            let pMid = geometry.center(for: GridCoord(x: 1, y: 0))
+            let pB = geometry.center(for: GridCoord(x: 2, y: 0))
+
+            interpreter.beginStroke(at: pA, geometry: geometry, state: &state, history: &history)
+            interpreter.continueStroke(to: pMid, geometry: geometry, state: &state)
+            // Final flick directly into B at touchEnd
+            let result = interpreter.endStroke(at: pB, geometry: geometry, state: &state, history: &history)
+
+            verify(result.didConnectLine == true, "R5: Flick connected line successfully")
+            verify(result.moveCountIncremented == true, "R5: Flick incremented move count")
+            verify(state.paths["coolant"]?.isConnected == true, "R5: Coolant path connected")
+            verify(state.moveCount == 1, "R5: Exactly 1 move committed")
+        }
+
+        // R6: Drag into enemy terminal -> blocked, head preserved at previous valid cell
+        do {
+            let terminals = [
+                Terminal(id: "c_A", lineId: "coolant", fluidType: .coolant, coord: GridCoord(x: 0, y: 0), isPrimarySocket: true),
+                Terminal(id: "c_B", lineId: "coolant", fluidType: .coolant, coord: GridCoord(x: 2, y: 0), isPrimarySocket: false),
+                Terminal(id: "f_A", lineId: "fuel", fluidType: .fuel, coord: GridCoord(x: 1, y: 0), isPrimarySocket: true),
+                Terminal(id: "f_B", lineId: "fuel", fluidType: .fuel, coord: GridCoord(x: 1, y: 2), isPrimarySocket: false)
+            ]
+            var state = PuzzleState(gridSize: GridSize(dimension: 3), terminals: terminals)
+            var history = MoveHistory()
+            let interpreter = GridGestureInterpreter()
+            let geometry = BoardGeometry(gridSize: state.gridSize, containerSize: CGSize(width: 300, height: 300), margin: 0)
+
+            let p0 = geometry.center(for: GridCoord(x: 0, y: 0))
+            let pEnemy = geometry.center(for: GridCoord(x: 1, y: 0))
+
+            interpreter.beginStroke(at: p0, geometry: geometry, state: &state, history: &history)
+            interpreter.continueStroke(to: pEnemy, geometry: geometry, state: &state)
+
+            verify(interpreter.acceptedPipeHead == GridCoord(x: 0, y: 0), "R6: Head preserved at (0,0) after hitting enemy terminal")
+            verify(interpreter.feedbackController.lastBlockedCoord == GridCoord(x: 1, y: 0), "R6: Blocked coord recorded")
+        }
+
+        // R7: Drag into enemy terminal, then slide sideways into valid neighbor without finger lift
+        do {
+            let terminals = [
+                Terminal(id: "c_A", lineId: "coolant", fluidType: .coolant, coord: GridCoord(x: 0, y: 0), isPrimarySocket: true),
+                Terminal(id: "c_B", lineId: "coolant", fluidType: .coolant, coord: GridCoord(x: 2, y: 2), isPrimarySocket: false),
+                Terminal(id: "f_A", lineId: "fuel", fluidType: .fuel, coord: GridCoord(x: 1, y: 0), isPrimarySocket: true),
+                Terminal(id: "f_B", lineId: "fuel", fluidType: .fuel, coord: GridCoord(x: 1, y: 1), isPrimarySocket: false)
+            ]
+            var state = PuzzleState(gridSize: GridSize(dimension: 3), terminals: terminals)
+            var history = MoveHistory()
+            let interpreter = GridGestureInterpreter()
+            let geometry = BoardGeometry(gridSize: state.gridSize, containerSize: CGSize(width: 300, height: 300), margin: 0)
+
+            let p0 = geometry.center(for: GridCoord(x: 0, y: 0))
+            let pEnemy = geometry.center(for: GridCoord(x: 1, y: 0))
+            let pDown = geometry.center(for: GridCoord(x: 0, y: 1))
+
+            interpreter.beginStroke(at: p0, geometry: geometry, state: &state, history: &history)
+            interpreter.continueStroke(to: pEnemy, geometry: geometry, state: &state)
+            verify(interpreter.acceptedPipeHead == GridCoord(x: 0, y: 0), "R7: Head at (0,0) when blocked")
+
+            // Slide sideways/down to (0,1) without lifting finger
+            interpreter.continueStroke(to: pDown, geometry: geometry, state: &state)
+            verify(interpreter.acceptedPipeHead == GridCoord(x: 0, y: 1), "R7: Pipe seamlessly moved to (0,1) after sliding sideways")
+            verify(state.paths["coolant"]?.head == GridCoord(x: 0, y: 1), "R7: State path head is (0,1)")
+
+            _ = interpreter.endStroke(state: &state, history: &history)
+            verify(state.moveCount == 1, "R7: Move committed successfully")
+        }
+
+        // R8: Touch cancellation restores board snapshot with 0 moves
         do {
             let terminals = [
                 Terminal(id: "c_A", lineId: "coolant", fluidType: .coolant, coord: GridCoord(x: 0, y: 0), isPrimarySocket: true),
@@ -253,21 +408,112 @@ public struct EngineTests {
 
             let p0 = geometry.center(for: GridCoord(x: 0, y: 0))
             let p1 = geometry.center(for: GridCoord(x: 1, y: 0))
-            let p2 = geometry.center(for: GridCoord(x: 2, y: 0))
 
             interpreter.beginStroke(at: p0, geometry: geometry, state: &state, history: &history)
             interpreter.continueStroke(to: p1, geometry: geometry, state: &state)
-            interpreter.continueStroke(to: p2, geometry: geometry, state: &state)
-            interpreter.endStroke(state: &state, history: &history)
+            verify(state.paths["coolant"]?.coordinates.count == 2, "Path extended during drag")
 
-            verify(state.moveCount == 1, "Complex multi-step stroke counts as exactly 1 move")
-            verify(state.paths["coolant"]?.isConnected == true, "Line connected")
-            verify(history.canUndo, "History contains 1 undo state")
+            // Cancel stroke (e.g. system gesture or incoming call)
+            interpreter.cancelStroke(state: &state, history: &history)
 
-            if let undone = history.undo(currentState: state) {
-                state = undone
-            }
-            verify(state.paths["coolant"]?.coordinates.isEmpty == true, "Undo restored empty board state")
+            verify(state.paths["coolant"]?.coordinates.isEmpty == true, "R8: Path reverted to empty on cancel")
+            verify(state.moveCount == 0, "R8: 0 moves recorded on cancel")
+            verify(!history.canUndo, "R8: No undo snapshot created on cancel")
+            verify(!interpreter.isStrokeActive, "R8: Interpreter returned to idle")
+        }
+
+        // R9: Directional hysteresis & axis intent
+        do {
+            let geometry = BoardGeometry(
+                gridSize: GridSize(dimension: 5),
+                containerSize: CGSize(width: 250, height: 250),
+                margin: 0
+            )
+
+            // Start at center of (0,0), move horizontally to (1,0) with minor vertical wobble
+            let pStart = geometry.center(for: GridCoord(x: 0, y: 0))
+            let pWobble = CGPoint(x: geometry.center(for: GridCoord(x: 1, y: 0)).x, y: pStart.y + 4.0) // small 4pt wobble
+
+            let crossed = ContinuousGridTraverser.crossedCells(
+                from: pStart,
+                to: pWobble,
+                geometry: geometry,
+                currentAxis: .horizontal
+            )
+            verify(crossed == [GridCoord(x: 1, y: 0)], "R9: Horizontal axis intent filtered vertical wobble")
+        }
+
+        // R10: Corner crossing tie breaker respects current axis
+        do {
+            let geometry = BoardGeometry(
+                gridSize: GridSize(dimension: 5),
+                containerSize: CGSize(width: 250, height: 250),
+                margin: 0
+            )
+
+            let p0 = geometry.center(for: GridCoord(x: 0, y: 0))
+            let pDiag = geometry.center(for: GridCoord(x: 1, y: 1))
+
+            let crossedHoriz = ContinuousGridTraverser.crossedCells(from: p0, to: pDiag, geometry: geometry, currentAxis: .horizontal)
+            verify(crossedHoriz == [GridCoord(x: 1, y: 0), GridCoord(x: 1, y: 1)], "R10: Horizontal axis stepped X then Y")
+
+            let crossedVert = ContinuousGridTraverser.crossedCells(from: p0, to: pDiag, geometry: geometry, currentAxis: .vertical)
+            verify(crossedVert == [GridCoord(x: 0, y: 1), GridCoord(x: 1, y: 1)], "R10: Vertical axis stepped Y then X")
+        }
+
+        // R11: Blocked event deduplication
+        do {
+            let feedback = TouchFeedbackController()
+            var eventCount = 0
+            feedback.onBlockedCoord = { _ in eventCount += 1 }
+
+            feedback.handle(.blocked(GridCoord(x: 1, y: 0)))
+            feedback.handle(.blocked(GridCoord(x: 1, y: 0))) // Duplicate
+            feedback.handle(.blocked(GridCoord(x: 1, y: 0))) // Duplicate
+
+            verify(eventCount == 1, "R11: Blocked feedback deduplicated on same cell")
+
+            // Move to different blocked cell
+            feedback.handle(.blocked(GridCoord(x: 2, y: 0)))
+            verify(eventCount == 2, "R11: New blocked cell triggers event")
+        }
+
+        // R12: Victory commit ordering & move count integrity
+        do {
+            let terminals = [
+                Terminal(id: "c_A", lineId: "coolant", fluidType: .coolant, coord: GridCoord(x: 0, y: 0), isPrimarySocket: true),
+                Terminal(id: "c_B", lineId: "coolant", fluidType: .coolant, coord: GridCoord(x: 1, y: 0), isPrimarySocket: false),
+                Terminal(id: "f_A", lineId: "fuel", fluidType: .fuel, coord: GridCoord(x: 2, y: 0), isPrimarySocket: true),
+                Terminal(id: "f_B", lineId: "fuel", fluidType: .fuel, coord: GridCoord(x: 2, y: 2), isPrimarySocket: false)
+            ]
+            var state = PuzzleState(gridSize: GridSize(dimension: 3), terminals: terminals)
+
+            // Pre-complete fuel path covering all remaining 7 cells:
+            // (2,0) -> (2,1) -> (1,1) -> (0,1) -> (0,2) -> (1,2) -> (2,2)
+            var fuelPath = state.paths["fuel"]!
+            fuelPath.start(at: GridCoord(x: 2, y: 0))
+            fuelPath.append(GridCoord(x: 2, y: 1))
+            fuelPath.append(GridCoord(x: 1, y: 1))
+            fuelPath.append(GridCoord(x: 0, y: 1))
+            fuelPath.append(GridCoord(x: 0, y: 2))
+            fuelPath.append(GridCoord(x: 1, y: 2))
+            fuelPath.append(GridCoord(x: 2, y: 2))
+            state.updatePath(for: "fuel", path: fuelPath)
+
+            var history = MoveHistory()
+            let interpreter = GridGestureInterpreter()
+            let geometry = BoardGeometry(gridSize: state.gridSize, containerSize: CGSize(width: 300, height: 300), margin: 0)
+
+            let p0 = geometry.center(for: GridCoord(x: 0, y: 0))
+            let p1 = geometry.center(for: GridCoord(x: 1, y: 0))
+
+            interpreter.beginStroke(at: p0, geometry: geometry, state: &state, history: &history)
+            interpreter.continueStroke(to: p1, geometry: geometry, state: &state)
+            let result = interpreter.endStroke(at: p1, geometry: geometry, state: &state, history: &history)
+
+            verify(result.isPuzzleSolved == true, "R12: Puzzle is solved on commit")
+            verify(result.moveCountIncremented == true, "R12: Move count incremented on commit")
+            verify(state.moveCount == 1, "R12: Move count is exactly 1 upon victory evaluation")
         }
 
         // ==========================================
@@ -408,7 +654,7 @@ public struct EngineTests {
             verify(caughtMultipleOrPremature, "LevelValidator rejected ambiguous / non-unique level")
         }
 
-        // Test 5 (All Curated Shipped Levels): All 9 levels across 5x5, 6x6, 7x7 pass strict validation
+        // Test 5 (All Curated Shipped Levels): All 176 levels across 5x5, 6x6, 7x7 pass strict validation
         do {
             for pack in LevelRepository.allPacks {
                 for level in pack.levels {

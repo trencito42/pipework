@@ -6,10 +6,12 @@ public enum ContinuousGridTraverser {
 
     /// Computes the ordered sequence of orthogonal grid cells entered when moving from `startPoint` to `endPoint`.
     /// Guaranteed to NEVER produce a diagonal grid transition.
+    /// Incorporates directional hysteresis and axis intent to eliminate corner twitching and wobbles.
     public static func crossedCells(
         from startPoint: CGPoint,
         to endPoint: CGPoint,
-        geometry: BoardGeometry
+        geometry: BoardGeometry,
+        currentAxis: GridDirection.Axis? = nil
     ) -> [GridCoord] {
         let cs = geometry.cellSize
         guard cs > 0 else { return [] }
@@ -75,10 +77,20 @@ public enum ContinuousGridTraverser {
         while (currentCol != col1 || currentRow != row1) && iterations < maxIterations {
             iterations += 1
 
-            if abs(tMaxX - tMaxY) < epsilon && tMaxX <= 1.0 + epsilon {
+            let isNearCorner = abs(tMaxX - tMaxY) < epsilon && tMaxX <= 1.0 + epsilon
+
+            if isNearCorner {
                 // Exact corner crossing tie-break:
-                // Prioritize dominant pointer movement delta to resolve cleanly
-                if abs(du) >= abs(dv) {
+                // 1. Prefer current axis intent if active
+                // 2. Otherwise prefer dominant physical pointer delta
+                let preferHorizontal: Bool
+                if let axis = currentAxis {
+                    preferHorizontal = (axis == .horizontal)
+                } else {
+                    preferHorizontal = abs(du) >= abs(dv)
+                }
+
+                if preferHorizontal {
                     currentCol += stepX
                     if currentCol >= 0 && currentCol < gridSize.width {
                         result.append(GridCoord(x: currentCol, y: currentRow))
@@ -123,5 +135,52 @@ public enum ContinuousGridTraverser {
         }
 
         return result
+    }
+
+    /// Generates a strictly orthogonal path between two coordinates, resolving any multi-cell jump.
+    public static func orthogonalPath(
+        from startCoord: GridCoord,
+        to targetCoord: GridCoord,
+        preferredAxis: GridDirection.Axis? = nil
+    ) -> [GridCoord] {
+        if startCoord == targetCoord { return [] }
+
+        var path: [GridCoord] = []
+        var current = startCoord
+
+        let dx = targetCoord.x - startCoord.x
+        let dy = targetCoord.y - startCoord.y
+
+        let stepX = dx > 0 ? 1 : (dx < 0 ? -1 : 0)
+        let stepY = dy > 0 ? 1 : (dy < 0 ? -1 : 0)
+
+        let preferX: Bool
+        if let axis = preferredAxis {
+            preferX = (axis == .horizontal)
+        } else {
+            preferX = abs(dx) >= abs(dy)
+        }
+
+        if preferX {
+            while current.x != targetCoord.x {
+                current = GridCoord(x: current.x + stepX, y: current.y)
+                path.append(current)
+            }
+            while current.y != targetCoord.y {
+                current = GridCoord(x: current.x, y: current.y + stepY)
+                path.append(current)
+            }
+        } else {
+            while current.y != targetCoord.y {
+                current = GridCoord(x: current.x, y: current.y + stepY)
+                path.append(current)
+            }
+            while current.x != targetCoord.x {
+                current = GridCoord(x: current.x + stepX, y: current.y)
+                path.append(current)
+            }
+        }
+
+        return path
     }
 }

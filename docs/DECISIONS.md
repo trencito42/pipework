@@ -39,3 +39,17 @@
 - **Status**: Accepted
 - **Context**: Complex nested view hierarchies for $12 \times 12$ grids (144 individual cell views) cause layout and gesture overhead.
 - **Decision**: Render the entire grid, active paths, and terminals inside a single SwiftUI `Canvas` / `GraphicsContext` with immediate vector draw commands, providing 120Hz performance on ProMotion devices with minimal overhead.
+
+---
+
+## ADR-007: Core Haptics Subsystem with Sensory Rate Limiting & Deduplication
+- **Status**: Accepted
+- **Context**: Drawing fast routes can generate dozens of micro-step events per second. Continuous vibration causes hand numbness and sensory fatigue. Blocked boundaries could spam repeated clicks if the finger trembles against the edge.
+- **Decision**: Implement `CHHapticEngine` transient AHAP patterns throttled to 28ms for forward/backward steps, coordinate-based deduplication for blocked boundaries in `TouchFeedbackController`, and graceful fallback to `UIImpactFeedbackGenerator`.
+
+---
+
+## ADR-008: Non-Destructive Stroke Lifecycle & Transaction Ordering
+- **Status**: Accepted
+- **Context**: Tapping or resting a finger on a terminal or line should not truncate paths or register as accidental moves. Victory evaluation must always include the completing stroke in persistence.
+- **Decision**: Implement an explicit `StrokePhase` machine (`idle` -> `armed` -> `dragging`). Transactions are rolled back if movement is less than 25% cell dimension. Victory is evaluated strictly after committing the final transaction and incrementing the move count.

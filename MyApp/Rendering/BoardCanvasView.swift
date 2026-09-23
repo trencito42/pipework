@@ -7,10 +7,11 @@ public struct BoardCanvasView: View {
     @Binding public var history: MoveHistory
     public let showAccessibilitySymbols: Bool
     public let reduceMotion: Bool
-    public let blockedCoord: GridCoord?
-    public let onBlockedCoordHandled: () -> Void
+    public let onStrokeCommitted: (StrokeCommitResult) -> Void
 
     @State private var dragPointerLocation: CGPoint? = nil
+    @State private var localBlockedCoord: GridCoord? = nil
+    @State private var blockedTask: Task<Void, Never>? = nil
     @StateObject private var gestureController = BoardGestureController()
 
     public init(
@@ -18,19 +19,21 @@ public struct BoardCanvasView: View {
         history: Binding<MoveHistory>,
         showAccessibilitySymbols: Bool = false,
         reduceMotion: Bool = false,
-        blockedCoord: GridCoord? = nil,
-        onBlockedCoordHandled: @escaping () -> Void = {}
+        onStrokeCommitted: @escaping (StrokeCommitResult) -> Void = { _ in }
     ) {
         self._state = state
         self._history = history
         self.showAccessibilitySymbols = showAccessibilitySymbols
         self.reduceMotion = reduceMotion
-        self.blockedCoord = blockedCoord
-        self.onBlockedCoordHandled = onBlockedCoordHandled
+        self.onStrokeCommitted = onStrokeCommitted
     }
 
     public var body: some View {
-        TimelineView(.animation(minimumInterval: reduceMotion ? 1.0 : (1.0 / 60.0))) { timeline in
+        let hasFlowingFluid = state.connectedLineCount > 0 && !reduceMotion
+        let isInteracting = dragPointerLocation != nil || localBlockedCoord != nil
+        let interval: Double = reduceMotion ? 1.0 : ((hasFlowingFluid || isInteracting) ? (1.0 / 60.0) : (1.0 / 15.0))
+
+        TimelineView(.animation(minimumInterval: interval)) { timeline in
             let timeInterval = reduceMotion ? 0.0 : timeline.date.timeIntervalSinceReferenceDate
             GeometryReader { proxy in
                 let geometry = BoardGeometry(
@@ -40,12 +43,12 @@ public struct BoardCanvasView: View {
                 )
 
                 ZStack {
-                    Canvas { context, size in
+                    Canvas { context, _ in
                         drawBoardShell(context: context, geometry: geometry)
                         drawGridPlates(context: context, geometry: geometry)
                         drawHoses(context: context, geometry: geometry, time: timeInterval)
                         drawActiveDragNozzle(context: context, geometry: geometry)
-                        drawSockets(context: context, geometry: geometry, time: timeInterval)
+                        drawSockets(context: context, geometry: geometry)
                         drawBlockedFeedback(context: context, geometry: geometry)
                     }
 
@@ -68,12 +71,26 @@ public struct BoardCanvasView: View {
                                 state: &state
                             )
                         },
-                        onTouchEnded: {
+                        onTouchEnded: { point in
                             dragPointerLocation = nil
-                            gestureController.interpreter.endStroke(
+                            let result = gestureController.interpreter.endStroke(
+                                at: point,
+                                geometry: geometry,
                                 state: &state,
                                 history: &history
                             )
+                            onStrokeCommitted(result)
+                        },
+                        onTouchCancelled: {
+                            dragPointerLocation = nil
+                            gestureController.interpreter.cancelStroke(
+                                state: &state,
+                                history: &history
+                            )
+                        },
+                        onPredictedTouchMoved: { predPoint in
+                            // Update visual drag nozzle position only (does NOT affect puzzle state)
+                            dragPointerLocation = predPoint
                         }
                     )
                     #else
@@ -99,18 +116,37 @@ public struct BoardCanvasView: View {
                                         )
                                     }
                                 }
-                                .onEnded { _ in
+                                .onEnded { value in
                                     dragPointerLocation = nil
                                     gestureController.isDragging = false
-                                    gestureController.interpreter.endStroke(
+                                    let result = gestureController.interpreter.endStroke(
+                                        at: value.location,
+                                        geometry: geometry,
                                         state: &state,
                                         history: &history
                                     )
+                                    onStrokeCommitted(result)
                                 }
                         )
                     #endif
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
+                .onAppear {
+                    gestureController.interpreter.feedbackController.onBlockedCoord = { coord in
+                        triggerBlockedVisual(at: coord)
+                    }
+                }
+            }
+        }
+    }
+
+    private func triggerBlockedVisual(at coord: GridCoord) {
+        blockedTask?.cancel()
+        localBlockedCoord = coord
+        blockedTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 260_000_000)
+            if localBlockedCoord == coord {
+                localBlockedCoord = nil
             }
         }
     }
@@ -123,7 +159,7 @@ public struct BoardCanvasView: View {
 
         // Base plate fill
         context.fill(shellPath, with: .color(PipeworkTheme.gridCellEmpty))
-        // 1pt Structural border
+        // 1.5pt Structural border
         context.stroke(shellPath, with: .color(PipeworkTheme.borderDim), lineWidth: 1.5)
 
         // 4 Corner Mechanical Bolts
@@ -298,7 +334,7 @@ public struct BoardCanvasView: View {
 
     // MARK: - 5. Machined Metal Terminal Sockets
 
-    private func drawSockets(context: GraphicsContext, geometry: BoardGeometry, time: TimeInterval) {
+    private func drawSockets(context: GraphicsContext, geometry: BoardGeometry) {
         let cs = geometry.cellSize
         let outerR = cs * 0.38
         let cavityR = cs * 0.27
@@ -366,10 +402,10 @@ public struct BoardCanvasView: View {
         }
     }
 
-    // MARK: - 6. Blocked Feedback
+    // MARK: - 6. Blocked Feedback Shockwave
 
     private func drawBlockedFeedback(context: GraphicsContext, geometry: BoardGeometry) {
-        guard let blocked = blockedCoord else { return }
+        guard let blocked = localBlockedCoord else { return }
         let center = geometry.center(for: blocked)
         let cs = geometry.cellSize
 

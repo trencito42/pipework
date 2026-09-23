@@ -59,7 +59,10 @@ public struct MainMenuScreen: View {
                 // Action Buttons
                 VStack(spacing: 14) {
                     // Play / Continue Button
-                    Button(action: onPlay) {
+                    Button(action: {
+                        HapticService.shared.buttonTap()
+                        onPlay()
+                    }) {
                         Text(hasProgress ? "Continue" : "Play")
                             .font(.system(size: 17, weight: .bold))
                             .foregroundColor(Color(red: 6/255, green: 22/255, blue: 22/255))
@@ -79,7 +82,10 @@ public struct MainMenuScreen: View {
                     }
 
                     // Levels Button
-                    Button(action: onLevels) {
+                    Button(action: {
+                        HapticService.shared.buttonTap()
+                        onLevels()
+                    }) {
                         Text("Levels")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(PipeworkTheme.textMain)
@@ -96,7 +102,10 @@ public struct MainMenuScreen: View {
                     }
 
                     // Settings Button
-                    Button(action: onSettings) {
+                    Button(action: {
+                        HapticService.shared.buttonTap()
+                        onSettings()
+                    }) {
                         Text("Settings")
                             .font(.system(size: 15, weight: .medium))
                             .foregroundColor(PipeworkTheme.textMuted)

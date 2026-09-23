@@ -29,7 +29,10 @@ public struct SectorSelectScreen: View {
             VStack(spacing: 20) {
                 // Top Navigation Bar
                 HStack {
-                    Button(action: onBack) {
+                    Button(action: {
+                        HapticService.shared.buttonTap()
+                        onBack()
+                    }) {
                         HStack(spacing: 6) {
                             Image(systemName: "chevron.left")
                                 .font(.system(size: 14, weight: .bold))
@@ -64,7 +67,10 @@ public struct SectorSelectScreen: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(Array(packs.enumerated()), id: \.offset) { index, pack in
-                            Button(action: { selectedPackIndex = index }) {
+                            Button(action: {
+                                HapticService.shared.buttonTap()
+                                selectedPackIndex = index
+                            }) {
                                 Text("\(pack.name) Grid")
                                     .font(.system(size: 14, weight: selectedPackIndex == index ? .bold : .medium))
                                     .foregroundColor(selectedPackIndex == index ? PipeworkTheme.primaryCyan : PipeworkTheme.textMuted)
@@ -103,7 +109,10 @@ public struct SectorSelectScreen: View {
         let isCompleted = record?.isCompleted ?? false
         let stars = record?.starsEarned ?? 0
 
-        return Button(action: { onSelectLevel(currentPack, level) }) {
+        return Button(action: {
+            HapticService.shared.buttonTap()
+            onSelectLevel(currentPack, level)
+        }) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Level \(level.number)")

@@ -7,6 +7,20 @@ public enum GridDirection: String, Codable, Sendable, CaseIterable {
     case east
     case west
 
+    /// Directional axis (Horizontal vs Vertical).
+    public enum Axis: String, Codable, Sendable, CaseIterable {
+        case horizontal
+        case vertical
+    }
+
+    /// The axis of this direction.
+    public var axis: Axis {
+        switch self {
+        case .east, .west: return .horizontal
+        case .north, .south: return .vertical
+        }
+    }
+
     /// Unit delta on X axis.
     public var dx: Int {
         switch self {

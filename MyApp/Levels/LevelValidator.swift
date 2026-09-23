@@ -16,7 +16,7 @@ public enum LevelValidator {
         public let rejectionReason: String?
 
         public var description: String {
-            var lines = [
+            let lines = [
                 "Level: \(levelId)",
                 "Canonical coverage: \(coveredCellCount)/\(totalCellCount)",
                 "Full-board solutions found: \(fullBoardSolutionCount)",

@@ -3,7 +3,7 @@
 ## 1. Grid Model
 The board is represented as an $N \times N$ orthogonal grid where each cell $(x, y)$ has:
 - Coordinates $0 \le x < N$ and $0 \le y < N$ ($x$: column index left-to-right, $y$: row index top-to-bottom).
-- Cell contents: either empty, an endpoint terminal, or an active pipe path segment.
+- Cell contents: either empty, an endpoint terminal socket, or an active pipe path segment.
 
 ---
 
@@ -24,17 +24,54 @@ The board is represented as an $N \times N$ orthogonal grid where each cell $(x,
 
 ---
 
-## 4. Touch Gestures & Raycast Interpolation
-To ensure high responsiveness and prevent missed cells when dragging quickly:
-1. **Touch Start**:
-   - If touch starts on terminal of line $k$: initiates new path or continues existing path from that terminal.
-   - If touch starts on an existing intermediate cell of line $k$: truncates the path to that cell and continues dragging from that position.
-   - If touch starts on an empty cell: gesture ignored until an endpoint or existing path is touched.
-2. **Continuous Drag Interpolation (Bresenham / Manhattan Stepping)**:
-   - When the touch moves from cell $A$ to cell $B$, if $B$ is not adjacent to $A$, the engine computes the intermediate orthogonal line of cells between $A$ and $B$.
-   - Stepping order resolves primary axis of movement first, feeding step-by-step transitions into the engine so no cells are skipped.
-3. **Touch End**:
-   - Finalizes the current stroke. If the path reaches the matching terminal, the line locks into "Connected" state with a success haptic.
+## 4. Stroke Lifecycle & Non-Destructive Touch-Down
+Drawing interaction follows an explicit 3-state lifecycle machine managed by `GridGestureInterpreter`:
+
+```
+               [Touch Down]
+                  │
+                  ▼
+              ┌───────┐
+              │ IDLE  │
+              └───┬───┘
+                  │ Valid Terminal or Pipe Touched
+                  ▼
+              ┌───────┐  [Lift without Drag (< Deadband)]
+              │ ARMED ├─────────────────────────────────► Rollback Transaction
+              └───┬───┘                                   (0 moves, 0 mutations)
+                  │ Drag >= 25% Cell Deadband
+                  ▼
+             ┌──────────┐
+             │ DRAGGING │
+             └────┬─────┘
+                  │
+                  ├─► [Blocked Step Encountered] ──► Retain Head at Valid Cell
+                  │                                  (Slide sideways without finger lift)
+                  ├─► [Touch Cancelled Event]    ──► Rollback Snapshot (0 moves)
+                  │
+                  ▼ [Touch Ended / Final Point]
+               Commit Transaction ──► Move Count + 1 ──► Win Evaluation
+```
+
+1. **Non-Destructive Touch Down (`.armed` Mode)**:
+   - Touching a terminal, intermediate pipe segment, or completed line arms the stroke without altering the board or history.
+   - If the player lifts their finger without exceeding the deadband threshold ($25\%$ cell width), the transaction is cleanly rolled back with **0 moves recorded**, **0 undo entries created**, and **0 mutations**.
+2. **Drag Transition (`.dragging` Mode)**:
+   - Once movement exceeds the deadband, the armed mode executes:
+     - `newFromTerminal`: clears old path and starts new head from touched socket.
+     - `resumeFromHead`: continues seamlessly from existing head.
+     - `truncateFromMiddle`: trims the pipe forward of the touched segment.
+3. **Continuous DDA Stepping & Directional Hysteresis**:
+   - Touch movements are projected onto the grid using 2D Amanatides & Woo continuous DDA raycasting (`ContinuousGridTraverser.crossedCells`).
+   - Axis intent tracking prevents accidental perpendicular jitter.
+   - Ambiguous $45^\circ$ diagonal corners resolve in favor of the current movement axis.
+4. **Blocked Route Reconciliation**:
+   - Moving into an enemy terminal or boundary triggers a blocked feedback pulse.
+   - The logical pipe head remains stationary at the last accepted valid cell.
+   - The player can immediately drag sideways or backward into any valid neighbor without lifting their finger.
+5. **Touch End & Cancellation**:
+   - `touchesEnded` passes the final touch coordinate into the interpreter to guarantee that quick flick gestures landing on destination terminals connect accurately.
+   - `touchesCancelled` immediately reverts the board to its pre-stroke state with zero move penalty.
 
 ---
 
@@ -59,17 +96,15 @@ When the active drawing path of line $k$ steps into cell $C_{target}$ which is c
 
 ---
 
-## 7. Win Condition & Pressure Metric
+## 7. Win Condition & Deterministic Victory Sequence
 - **Pressure Formula**:
   $$\text{Pressure} = \frac{\text{Occupied Usable Cells}}{\text{Total Usable Cells}} \times 100\%$$
 - **Victory Rule**:
   $$\text{All } K \text{ pairs connected} \quad \wedge \quad \text{Pressure} == 100\%$$
-- Connecting all endpoints at $< 100\%$ Pressure displays:
-  `LINES COMPLETE (5/5) — PRESSURE INSUFFICIENT (92%) — REROUTE TO SEAL GRID`
-
----
-
-## 8. Moves & Undo Semantics
-- **Move Count**: Increments by $1$ on each committed touch stroke that modifies the board state (i.e. on finger lift after adding, trimming, or cutting a line).
-- **Undo History**: Stores a stack of immutable board state snapshots. Triggering Undo pops the previous state, restoring path geometries and line connection statuses accurately.
-- **Restart**: Restores initial board state (all intermediate paths cleared, zero cells occupied outside terminals).
+- **Atomic Victory Commit Flow**:
+  1. Stroke commits the final board transaction.
+  2. Move count increments to its final count.
+  3. Win condition evaluates to `true`.
+  4. Progression and star rating are recorded in `PersistenceService` with the final move count.
+  5. Celebratory haptics and completion sound are emitted.
+  6. Victory modal overlay is presented following a polished $350\text{ms}$ celebration delay.
