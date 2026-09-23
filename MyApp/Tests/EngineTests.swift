@@ -654,7 +654,7 @@ public struct EngineTests {
             verify(caughtMultipleOrPremature, "LevelValidator rejected ambiguous / non-unique level")
         }
 
-        // Test 5 (All Curated Shipped Levels): All 176 levels across 5x5, 6x6, 7x7 pass strict validation
+        // Test 5: Every D4-unique campaign level exposed by the repository passes strict validation.
         do {
             for pack in LevelRepository.allPacks {
                 for level in pack.levels {

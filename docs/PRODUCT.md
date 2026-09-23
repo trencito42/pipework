@@ -42,6 +42,10 @@ Instead of generic colors, each circuit corresponds to a distinct industrial flo
    - Rapid-fire puzzle solving against a countdown timer (30s, 60s, 120s).
    - Score multiplier for fast, flawless completions without backtracking.
 
+### Implementation Status
+
+Sectors is the shipping mode. Daily Diagnostic and Emergency Overhaul remain planned and intentionally reuse the campaign engine when implemented; neither is currently exposed as playable UI.
+
 ## 5. Monetization & Tone
 - **Premium Feel**: No intrusive ad banners, no dark patterns, no energy bars.
 - **Atmosphere**: Dark graphite panels, subtle chamfers, crisp glowing conduits, satisfying mechanical clicks, subtle haptics.

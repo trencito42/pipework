@@ -53,3 +53,17 @@
 - **Status**: Accepted
 - **Context**: Tapping or resting a finger on a terminal or line should not truncate paths or register as accidental moves. Victory evaluation must always include the completing stroke in persistence.
 - **Decision**: Implement an explicit `StrokePhase` machine (`idle` -> `armed` -> `dragging`). Transactions are rolled back if movement is less than 25% cell dimension. Victory is evaluated strictly after committing the final transaction and incrementing the move count.
+
+---
+
+## ADR-009: Attempt-Based Mastery and Assisted Runs
+- **Status**: Accepted
+- **Context**: Restoring snapshot move counts on Undo and granting clean mastery after a full-route Hint made the score misleading.
+- **Decision**: A committed board-changing stroke remains counted after Undo. Hints mark the run assisted and cap its run award at two stars. Completion persistence captures the previous best before writing so `NEW BEST` is truthful.
+
+---
+
+## ADR-010: Stable-ID D4 Campaign Deduplication
+- **Status**: Accepted
+- **Context**: The source catalog contained 25 rotational/reflection duplicates, including only four unique 7×7 topologies among 26 records.
+- **Decision**: Canonicalize topology at repository load, retain the first stable ID, and omit later equivalents. This preserves existing completion identifiers without presenting repeated boards.

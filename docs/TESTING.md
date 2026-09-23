@@ -1,7 +1,7 @@
 # PIPEWORK — Testing & Quality Assurance Specification
 
 ## 1. Test Architecture
-PIPEWORK utilizes Apple's modern **Testing** framework (`import Testing`) for all unit and integration tests, ensuring rapid execution and deterministic verification.
+PIPEWORK has an executable `PipeworkTests` target using Apple's modern **Testing** framework (`import Testing`). A legacy in-app `EngineTests.runAll()` harness remains temporarily because it contains the broader interaction and content certification matrix; both suites are run during release validation.
 
 ---
 
@@ -33,3 +33,8 @@ PIPEWORK utilizes Apple's modern **Testing** framework (`import Testing`) for al
 - Solves known $5 \times 5$, $6 \times 6$, and $7 \times 7$ puzzles.
 - Correctly identifies unsolvable / impossible puzzles with isolated unfillable voids.
 - Proves solution uniqueness for canonical pack levels.
+
+## Current Executable Coverage
+
+- `PipeworkTests`: D4 invariance/distinction, shipping deduplication, par calibration, progression defaults, version-1 profile decoding, and attempt-based Undo behavior.
+- `EngineTests.runAll()`: 229 assertions covering engine rules, fast traversal, non-destructive taps, final-point commits, cancellation rollback, blocked recovery, hysteresis, haptic deduplication, final move ordering, solver behavior, and strict validation of all campaign levels exposed by `LevelRepository`.

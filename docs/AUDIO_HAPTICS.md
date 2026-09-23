@@ -24,8 +24,8 @@ PIPEWORK utilizes a dedicated `CHHapticEngine` (Core Haptics) subsystem backed b
 
 ---
 
-## 2. Procedural Audio Feedback
-All sound effects are lightweight, instantaneous, and synthesized or triggered with zero latency via `AudioToolbox` system sounds and sound effects channels.
+## 2. Audio Feedback
+The current implementation uses lightweight `AudioToolbox` system sounds. They provide immediate semantic coverage but are not final bespoke assets; custom recorded/synthesized industrial samples remain a physical-device polish task.
 
 | Action | Audio Trigger | Sound Character |
 |---|---|---|

@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## [1.3.0] - Progression, Mastery & Content Integrity
+### Completed
+- Continue now resumes the unfinished last-played level or the next incomplete unlocked level.
+- Added gentle sequential unlocking and ten-level subsectors with completion/star summaries.
+- Added version-2 backward-compatible persistence fields for continuation, unlocking, and assisted bests.
+- Undo now preserves attempt count; full-route Hint marks a run assisted and caps its run rating at two stars.
+- Victory captures previous best before persistence and displays stars, par, assisted status, Perfect Routing, and truthful New Best feedback.
+- Added pressure-insufficient guidance and contextual opening-level onboarding prompts.
+- Added deterministic D4 topology hashing, content audit records, solver-node difficulty reports, and runtime removal of 25 duplicated structures.
+- Generator now uses independent `line_N` identities, includes Steam, and throws on generation exhaustion.
+- Removed the developer-specific absolute level-data path.
+- Paused Canvas timeline updates while the board has no active animation.
+- Added an executable Swift Testing target; 7 tests and the 229-assertion legacy harness pass.
+
 ## [1.2.0] - Core Interaction, Tactile Haptics & Victory Overhaul
 ### Completed
 - **Non-Destructive Stroke Lifecycle**: Implemented explicit 3-phase state machine (`idle` -> `armed` -> `dragging`) in `GridGestureInterpreter.swift`. Tapping on empty cells, start terminals, or existing/completed line segments without exceeding the deadband threshold performs zero mutations and logs 0 moves.
@@ -10,7 +24,7 @@
 - **Core Haptics Engine (`CHHapticEngine`)**: Built full custom AHAP parameter curves in `HapticService.swift` with ~28ms micro-step throttling, coordinate deduplication in `TouchFeedbackController.swift`, and UIKit fallback.
 - **Deterministic Victory Flow**: Structured stroke commit sequence (`commit` -> `moveCount += 1` -> `isSolved` -> `recordLevelCompletion`) ensuring the final stored move count is mathematically accurate. Added a 350ms celebration delay before modal presentation.
 - **Tactile UI Haptics**: Added consistent tactile button haptics across `MainMenuScreen`, `SectorSelectScreen`, `GameplayScreen`, and `SettingsScreen`.
-- **Automated Regression Suite**: Expanded `EngineTests.swift` to 254 test assertions covering all 22 interaction regression scenarios, solver checks, and strict certification across all 176 shipped levels.
+- **Regression Harness**: Expanded the then-custom `EngineTests.swift` runner with interaction, solver, and level certification checks. It was not yet an Xcode test target at this release.
 
 ## [1.1.0] - PIPEWORK Recovery & Stabilization Pass
 ### Completed

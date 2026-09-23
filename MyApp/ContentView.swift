@@ -42,11 +42,11 @@ public struct ContentView: View {
             case .menu:
                 MainMenuScreen(
                     onPlay: {
-                        // Launch first uncompleted level or default level
-                        let pack = LevelRepository.allPacks.first!
-                        let level = pack.levels.first!
+                        guard let destination = CampaignProgression.continueLocation(profile: persistence.profile) else {
+                            return
+                        }
                         withAnimation(.easeInOut(duration: 0.25)) {
-                            currentScreen = .gameplay(pack: pack, level: level)
+                            currentScreen = .gameplay(pack: destination.pack, level: destination.level)
                         }
                     },
                     onLevels: {

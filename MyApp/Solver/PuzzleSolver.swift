@@ -9,6 +9,7 @@ public final class PuzzleSolver {
         public let solutionCount: Int
         public let paths: [String: [GridCoord]]?
         public let coveredCellCount: Int
+        public let exploredNodes: Int
     }
 
     private let gridSize: GridSize
@@ -67,7 +68,8 @@ public final class PuzzleSolver {
             isSolvable: !foundSolutions.isEmpty,
             solutionCount: foundSolutions.count,
             paths: firstPaths,
-            coveredCellCount: count
+            coveredCellCount: count,
+            exploredNodes: steps
         )
     }
 
@@ -226,7 +228,8 @@ public final class PuzzleSolver {
                 isSolvable: true,
                 solutionCount: 1,
                 paths: sol,
-                coveredCellCount: totalCovered
+                coveredCellCount: totalCovered,
+                exploredNodes: stepCount
             )
         }
         return nil

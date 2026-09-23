@@ -12,14 +12,7 @@ public enum LevelRepository {
         if let url = Bundle.main.url(forResource: "LevelData", withExtension: "json"),
            let data = try? Data(contentsOf: url),
            let packs = try? JSONDecoder().decode([LevelPack].self, from: data) {
-            return packs
-        }
-
-        // Fallback for previews or standalone test runners
-        let devPath = "/Users/stefan/Library/Developer/Xcode/UntitledProjects/Untitled Project/MyApp/Levels/LevelData.json"
-        if let devData = try? Data(contentsOf: URL(fileURLWithPath: devPath)),
-           let devPacks = try? JSONDecoder().decode([LevelPack].self, from: devData) {
-            return devPacks
+            return prepareForCampaign(packs)
         }
 
         // Hardcoded safe minimum backup
@@ -40,6 +33,40 @@ public enum LevelRepository {
 
     public static var sector7x7Pack: LevelPack {
         allPacks.first(where: { $0.gridSize == 7 }) ?? fallback7x7Pack
+    }
+
+    private static func prepareForCampaign(_ packs: [LevelPack]) -> [LevelPack] {
+        var seenHashes = Set<String>()
+        return packs.sorted { $0.order < $1.order }.map { pack in
+            let uniqueLevels = pack.levels.compactMap { level -> LevelDefinition? in
+                let hash = LevelTopology.d4CanonicalHash(for: level)
+                guard seenHashes.insert(hash).inserted else { return nil }
+
+                let quality = LevelQualityScorer.evaluate(level)
+                let correctionAllowance = min(4, Int((Double(quality.totalTurns).squareRoot() / 2.0).rounded()) + quality.internalEndpointsCount / 5)
+                let calibratedPar = level.pairs.count + correctionAllowance
+                let geometryDifficulty = min(
+                    100,
+                    quality.score * 55
+                        + Double(level.pairs.count) / Double(max(1, level.size)) * 18
+                        + Double(quality.internalEndpointsCount) * 1.4
+                        + Double(quality.totalTurns) / Double(max(1, level.size * level.size)) * 20
+                )
+
+                return LevelDefinition(
+                    id: level.id,
+                    packId: level.packId,
+                    number: level.number,
+                    size: level.size,
+                    pairs: level.pairs,
+                    canonicalSolution: level.canonicalSolution,
+                    parMoves: calibratedPar,
+                    difficultyScore: geometryDifficulty,
+                    signature: hash
+                )
+            }
+            return LevelPack(id: pack.id, name: pack.name, subtitle: pack.subtitle, gridSize: pack.gridSize, order: pack.order, levels: uniqueLevels)
+        }
     }
 
     // MARK: - Hardcoded Fallback Seed Packs

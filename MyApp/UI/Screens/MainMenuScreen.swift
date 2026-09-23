@@ -18,7 +18,12 @@ public struct MainMenuScreen: View {
     }
 
     private var hasProgress: Bool {
-        persistence.profile.totalLevelsSolved > 0
+        persistence.profile.lastPlayedLevelId != nil || persistence.profile.totalLevelsSolved > 0
+    }
+
+    private var continueDetail: String? {
+        guard let destination = CampaignProgression.continueLocation(profile: persistence.profile) else { return nil }
+        return "\(destination.pack.name) · Level \(destination.level.number)"
     }
 
     public var body: some View {
@@ -63,8 +68,15 @@ public struct MainMenuScreen: View {
                         HapticService.shared.buttonTap()
                         onPlay()
                     }) {
-                        Text(hasProgress ? "Continue" : "Play")
-                            .font(.system(size: 17, weight: .bold))
+                        VStack(spacing: 3) {
+                            Text(hasProgress ? "Continue" : "Play")
+                                .font(.system(size: 17, weight: .bold))
+                            if hasProgress, let detail = continueDetail {
+                                Text(detail)
+                                    .font(PipeworkTheme.monoFont(size: 10, weight: .semibold))
+                                    .opacity(0.72)
+                            }
+                        }
                             .foregroundColor(Color(red: 6/255, green: 22/255, blue: 22/255))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)

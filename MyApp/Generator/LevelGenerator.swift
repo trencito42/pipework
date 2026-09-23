@@ -3,6 +3,10 @@ import Foundation
 /// Solution-first puzzle generator creating validated, 100% full-board coverage, uniquely solvable puzzles
 /// with certified immunity to premature partial-coverage routing.
 public enum LevelGenerator {
+    public enum GenerationError: Error {
+        case invalidConfiguration
+        case exhaustedAttempts(size: Int, pairCount: Int, attempts: Int)
+    }
 
     /// Generates a certified production-ready level satisfying:
     /// 1. 100% Canonical full-board coverage
@@ -15,9 +19,12 @@ public enum LevelGenerator {
         packId: String = "curated",
         levelNumber: Int = 1,
         maxAttempts: Int = 200
-    ) -> LevelDefinition {
+    ) throws -> LevelDefinition {
+        guard size >= 3, pairCount >= 1, pairCount * 2 <= size * size, maxAttempts > 0 else {
+            throw GenerationError.invalidConfiguration
+        }
         let gridSize = GridSize(dimension: size)
-        let fluids: [FluidType] = [.coolant, .fuel, .chemical, .pressure, .thermal, .auxiliary, .plasma]
+        let fluids = FluidType.allCases
 
         for _ in 0..<maxAttempts {
             if let candidate = attemptGenerate(gridSize: gridSize, pairCount: pairCount, fluids: fluids, packId: packId, levelNumber: levelNumber) {
@@ -37,8 +44,7 @@ public enum LevelGenerator {
             }
         }
 
-        // Fallback to default certified level if random attempt limit reached
-        return LevelRepository.defaultLevel
+        throw GenerationError.exhaustedAttempts(size: size, pairCount: pairCount, attempts: maxAttempts)
     }
 
     private static func attemptGenerate(
@@ -75,7 +81,7 @@ public enum LevelGenerator {
         while unassignedCount > 0 && growthStuck < 200 {
             var grownAny = false
             for p in 0..<pairCount {
-                let head = paths[p].last!
+                guard let head = paths[p].last else { return nil }
                 let emptyNeighbors = head.orthogonalNeighbors(in: gridSize).filter { occupancy[$0.x][$0.y] == nil }
 
                 if let next = emptyNeighbors.randomElement() {
@@ -105,9 +111,8 @@ public enum LevelGenerator {
         for p in 0..<pairCount {
             let path = paths[p]
             let fluid = fluids[p % fluids.count]
-            let lineId = fluid.rawValue
-            let start = path.first!
-            let end = path.last!
+            let lineId = "line_\(p)"
+            guard let start = path.first, let end = path.last else { return nil }
 
             pairs.append(
                 TerminalPairDefinition(

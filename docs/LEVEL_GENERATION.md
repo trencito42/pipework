@@ -44,3 +44,11 @@ A generated puzzle is accepted only if:
 - **Average Path Length**: $\ge N \times 1.2$.
 - **Turns / Bends**: Each path must contain at least 1–2 direction changes (no puzzles consisting purely of straight bars).
 - **Unique Solution Count**: Solver returns exactly 1 solution that achieves 100% coverage.
+
+## 4. Logical Identity and Failure
+
+Generated lines use stable logical IDs (`line_0`, `line_1`, …) independently of their visual `FluidType`; visual fluids cycle through all cases, including Steam. Production generation throws `GenerationError` after exhausting attempts instead of silently substituting an unrelated fallback level.
+
+## 5. Campaign Canonicalization
+
+`LevelTopology.d4CanonicalHash` normalizes terminal topology across all eight square symmetries, pair ordering, endpoint ordering, and fluid assignment. `LevelRepository` retains the first stable level ID in each equivalence class and removes later structural duplicates before exposing campaign content.

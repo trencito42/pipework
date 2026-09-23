@@ -42,6 +42,8 @@ public struct GameSettings: Codable, Sendable {
 ---
 
 ## 3. Schema Migration
-- Current version: `1`.
+- Current version: `2`.
 - Migrations check `version` on load and apply linear transform steps (`migrateFrom1To2()`, etc.) before persisting back to disk.
 - Atomic writes via `Data.write(to:options: .atomic)`.
+
+Version 2 adds `lastPlayedLevelId`, `highestUnlockedLevelIndex`, and assisted-best metadata. Decoding uses explicit defaults so version-1 saves remain valid. Continue prioritizes an unfinished last-played level, then the first incomplete unlocked level, then the most recently played level.

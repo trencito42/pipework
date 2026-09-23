@@ -4,7 +4,8 @@ import SwiftUI
 public struct VictoryOverlayView: View {
     public let levelTitle: String
     public let moves: Int
-    public let bestMoves: Int?
+    public let parMoves: Int
+    public let outcome: CompletionOutcome?
     public let onNextLevel: () -> Void
     public let onReplay: () -> Void
     public let onLevels: () -> Void
@@ -12,14 +13,16 @@ public struct VictoryOverlayView: View {
     public init(
         levelTitle: String,
         moves: Int,
-        bestMoves: Int? = nil,
+        parMoves: Int,
+        outcome: CompletionOutcome? = nil,
         onNextLevel: @escaping () -> Void,
         onReplay: @escaping () -> Void = {},
         onLevels: @escaping () -> Void = {}
     ) {
         self.levelTitle = levelTitle
         self.moves = moves
-        self.bestMoves = bestMoves
+        self.parMoves = parMoves
+        self.outcome = outcome
         self.onNextLevel = onNextLevel
         self.onReplay = onReplay
         self.onLevels = onLevels
@@ -57,6 +60,31 @@ public struct VictoryOverlayView: View {
                         .foregroundColor(PipeworkTheme.textMain)
                 }
 
+                HStack(spacing: 6) {
+                    ForEach(1...3, id: \.self) { star in
+                        Image(systemName: star <= (outcome?.stars ?? 1) ? "star.fill" : "star")
+                            .font(.system(size: 23, weight: .semibold))
+                            .foregroundColor(star <= (outcome?.stars ?? 1) ? PipeworkTheme.primaryCyan : PipeworkTheme.textDim)
+                    }
+                }
+
+                if outcome?.isPerfect == true {
+                    Text("PERFECT ROUTING")
+                        .font(PipeworkTheme.monoFont(size: 11, weight: .bold))
+                        .foregroundColor(PipeworkTheme.primaryCyan)
+                        .tracking(1.4)
+                } else if outcome?.isNewBest == true {
+                    Text("NEW BEST")
+                        .font(PipeworkTheme.monoFont(size: 11, weight: .bold))
+                        .foregroundColor(PipeworkTheme.primaryCyan)
+                        .tracking(1.4)
+                } else if outcome?.isAssisted == true {
+                    Text("ASSISTED SOLVE")
+                        .font(PipeworkTheme.monoFont(size: 11, weight: .bold))
+                        .foregroundColor(PipeworkTheme.textMuted)
+                        .tracking(1.2)
+                }
+
                 // Stats card
                 HStack(spacing: 20) {
                     VStack(spacing: 2) {
@@ -68,7 +96,16 @@ public struct VictoryOverlayView: View {
                             .foregroundColor(PipeworkTheme.primaryCyan)
                     }
 
-                    if let best = bestMoves {
+                    VStack(spacing: 2) {
+                        Text("PAR")
+                            .font(PipeworkTheme.monoFont(size: 10, weight: .bold))
+                            .foregroundColor(PipeworkTheme.textMuted)
+                        Text("\(parMoves)")
+                            .font(.system(size: 22, weight: .heavy, design: .rounded))
+                            .foregroundColor(PipeworkTheme.textMain)
+                    }
+
+                    if let best = outcome?.bestMoves {
                         Divider()
                             .frame(height: 28)
                             .background(PipeworkTheme.borderDim)

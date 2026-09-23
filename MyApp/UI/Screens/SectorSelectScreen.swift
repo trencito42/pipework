@@ -21,6 +21,13 @@ public struct SectorSelectScreen: View {
         packs[selectedPackIndex]
     }
 
+    private var chapters: [LevelChapter] {
+        stride(from: 0, to: currentPack.levels.count, by: 10).map { start in
+            let end = min(start + 10, currentPack.levels.count)
+            return LevelChapter(number: start / 10 + 1, levels: Array(currentPack.levels[start..<end]))
+        }
+    }
+
     public var body: some View {
         ZStack {
             PipeworkTheme.bgBase
@@ -92,9 +99,16 @@ public struct SectorSelectScreen: View {
 
                 // Level Grid
                 ScrollView {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
-                        ForEach(currentPack.levels) { level in
-                            levelCard(level: level)
+                    LazyVStack(spacing: 22) {
+                        ForEach(chapters) { chapter in
+                            VStack(alignment: .leading, spacing: 10) {
+                                chapterHeader(chapter)
+                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                                    ForEach(chapter.levels) { level in
+                                        levelCard(level: level)
+                                    }
+                                }
+                            }
                         }
                     }
                     .padding(.horizontal, 20)
@@ -104,12 +118,35 @@ public struct SectorSelectScreen: View {
         }
     }
 
+    private func chapterHeader(_ chapter: LevelChapter) -> some View {
+        let completed = chapter.levels.filter { persistence.isLevelCompleted($0.id) }.count
+        let stars = chapter.levels.reduce(0) { $0 + (persistence.getRecord(for: $1.id)?.starsEarned ?? 0) }
+        return HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("SUBSECTOR \(String(format: "%02d", chapter.number))")
+                    .font(PipeworkTheme.monoFont(size: 11, weight: .bold))
+                    .foregroundColor(PipeworkTheme.textMain)
+                    .tracking(1.2)
+                Text("\(completed)/\(chapter.levels.count) restored")
+                    .font(PipeworkTheme.monoFont(size: 10, weight: .medium))
+                    .foregroundColor(PipeworkTheme.textMuted)
+            }
+            Spacer()
+            Label("\(stars)/\(chapter.levels.count * 3)", systemImage: "star.fill")
+                .font(PipeworkTheme.monoFont(size: 10, weight: .bold))
+                .foregroundColor(PipeworkTheme.primaryCyan)
+        }
+    }
+
     private func levelCard(level: LevelDefinition) -> some View {
         let record = persistence.getRecord(for: level.id)
         let isCompleted = record?.isCompleted ?? false
         let stars = record?.starsEarned ?? 0
+        let isUnlocked = persistence.isLevelUnlocked(level.id)
+        let isCurrent = CampaignProgression.continueLocation(profile: persistence.profile)?.level.id == level.id
 
         return Button(action: {
+            guard isUnlocked else { return }
             HapticService.shared.buttonTap()
             onSelectLevel(currentPack, level)
         }) {
@@ -117,13 +154,17 @@ public struct SectorSelectScreen: View {
                 HStack {
                     Text("Level \(level.number)")
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(isCompleted ? PipeworkTheme.textMain : PipeworkTheme.textMuted)
+                        .foregroundColor(isUnlocked ? PipeworkTheme.textMain : PipeworkTheme.textMuted)
                     Spacer()
                     if isCompleted {
                         Circle()
                             .fill(PipeworkTheme.pressureGreen)
                             .frame(width: 8, height: 8)
                             .shadow(color: PipeworkTheme.pressureGreen, radius: 4)
+                    } else if !isUnlocked {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(PipeworkTheme.textDim)
                     }
                 }
 
@@ -153,10 +194,18 @@ public struct SectorSelectScreen: View {
                     .fill(PipeworkTheme.panelBase)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(isCompleted ? PipeworkTheme.borderBright : PipeworkTheme.borderDim, lineWidth: 1)
+                            .stroke(isCurrent ? PipeworkTheme.primaryCyan.opacity(0.7) : (isCompleted ? PipeworkTheme.borderBright : PipeworkTheme.borderDim), lineWidth: isCurrent ? 1.5 : 1)
                     )
             )
         }
+        .disabled(!isUnlocked)
+        .opacity(isUnlocked ? 1.0 : 0.48)
         .buttonStyle(PlainButtonStyle())
     }
+}
+
+private struct LevelChapter: Identifiable {
+    let number: Int
+    let levels: [LevelDefinition]
+    var id: Int { number }
 }

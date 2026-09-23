@@ -11,10 +11,10 @@ PIPEWORK is designed with strict separation between **Pure Puzzle Engine**, **St
                                │ User Actions & Bindings
                                ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    GameSessionViewModel                     │
-│        - Level state & progression                          │
-│        - Timer & move history tracking                      │
-│        - Audio / Haptic service invocations                 │
+│                    GameplayScreen State                     │
+│        - Active level, PuzzleState & MoveHistory            │
+│        - Attempt / assist state & victory transaction       │
+│        - Persistence and feedback coordination              │
 └──────────────┬──────────────────────────────┬───────────────┘
                │ Gesture Events               │ Immutable State Updates
                ▼                              ▼
@@ -34,10 +34,8 @@ PIPEWORK is designed with strict separation between **Pure Puzzle Engine**, **St
 
 ```
 MyApp/
-├── App/
-│   ├── PIPEWORKApp.swift              # Main entry point & App lifecycle
-│   ├── AppEnvironment.swift           # Central dependency container
-│   └── NavigationCoordinator.swift    # App navigation router
+├── MyApp.swift                        # Main entry point
+├── ContentView.swift                  # Lightweight navigation shell
 ├── Engine/                            # PURE SWIFT (No UIKit/SwiftUI/CoreGraphics)
 │   ├── GridCoord.swift                # (x, y) coordinate struct & math
 │   ├── GridDirection.swift            # North, South, East, West enum & Axis enum
@@ -51,15 +49,15 @@ MyApp/
 ├── Levels/
 │   ├── LevelDefinition.swift          # Codable puzzle model (Level ID, size, terminals)
 │   ├── LevelPack.swift                # Collection of levels (Sector 5x5, 6x6, 7x7)
-│   ├── LevelRepository.swift          # Bundle level loader & repository (176 certified levels)
+│   ├── LevelRepository.swift          # Bundle loader, D4 filtering, par calibration
+│   ├── CampaignProgression.swift      # Continue/unlocking/global campaign order
+│   ├── LevelAnalysis.swift            # D4 hash, difficulty and audit models
 │   ├── LevelValidator.swift           # Solver A / Solver B dual solvability certifier
 │   └── LevelQualityScorer.swift       # Aesthetic and inflection metric scorer
 ├── Rendering/
 │   ├── BoardGeometry.swift            # Coordinate mapping (Screen Point <-> GridCoord)
 │   ├── BoardCanvasView.swift          # SwiftUI Canvas high-performance board renderer
-│   ├── TerminalRenderer.swift         # Mechanical collar & LED rendering
-│   ├── PipeRenderer.swift             # Thick rounded pipe segments & glowing cores
-│   └── FluidPulseAnimator.swift       # Fluid flow pulse phase driver
+│   └── BoardCanvasView.swift          # Integrated pipe/socket/pulse renderer
 ├── Interaction/
 │   ├── ContinuousGridTraverser.swift  # 2D DDA raycaster, axis intent & hysteresis
 │   ├── GridGestureInterpreter.swift   # Non-destructive stroke lifecycle & step engine
@@ -73,10 +71,7 @@ MyApp/
 │   ├── HapticService.swift            # Core Haptics engine with rate limiting & UIKit fallback
 │   ├── AudioService.swift             # Lightweight procedural audio triggers
 │   └── PersistenceService.swift       # JSON/UserDefaults profile & progress storage
-└── UI/
-    ├── DesignSystem/                  # Design tokens (Colors, Typography, LayoutMetrics)
-    ├── Components/                    # Reusable tactile buttons, gauges, and HUD panels
-    └── Screens/                       # MainMenu, SectorSelect, GameplayScreen, SettingsScreen
+└── UI/                                # Design tokens, HUD/overlay, and app screens
 ```
 
 ---
