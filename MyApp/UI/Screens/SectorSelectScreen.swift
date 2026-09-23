@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Clean, lightweight level browser displaying pack segments and compact level tiles.
+/// Clean, lightweight level browser displaying pack segments and compact level tiles with swipe gesture support.
 public struct SectorSelectScreen: View {
     @ObservedObject private var persistence = PersistenceService.shared
     @State private var selectedPackIndex: Int = 0
@@ -91,7 +91,9 @@ public struct SectorSelectScreen: View {
                     ForEach(Array(packs.enumerated()), id: \.offset) { index, pack in
                         Button(action: {
                             HapticService.shared.buttonTap()
-                            selectedPackIndex = index
+                            withAnimation(.easeInOut(duration: 0.22)) {
+                                selectedPackIndex = index
+                            }
                         }) {
                             Text(pack.name)
                                 .font(PipeworkTheme.headingFont(size: 14, weight: selectedPackIndex == index ? .bold : .medium))
@@ -113,7 +115,7 @@ public struct SectorSelectScreen: View {
                 )
                 .padding(.horizontal, 20)
 
-                // Lightweight Level Grid
+                // Lightweight Level Grid with Horizontal Swipe Detection
                 ScrollView {
                     LazyVStack(spacing: 24) {
                         ForEach(chapters) { chapter in
@@ -131,6 +133,38 @@ public struct SectorSelectScreen: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 28)
                 }
+                .gesture(
+                    DragGesture(minimumDistance: 25, coordinateSpace: .local)
+                        .onEnded { value in
+                            let hTranslation = value.translation.width
+                            let vTranslation = value.translation.height
+
+                            // Only trigger when the horizontal swipe is dominant
+                            guard abs(hTranslation) > abs(vTranslation) * 1.3 else { return }
+
+                            if hTranslation < -40 {
+                                // Swiped Left -> Go to next pack (e.g. 5x5 -> 6x6 -> 7x7)
+                                if selectedPackIndex + 1 < packs.count {
+                                    HapticService.shared.buttonTap()
+                                    withAnimation(.easeInOut(duration: 0.25)) {
+                                        selectedPackIndex += 1
+                                    }
+                                }
+                            } else if hTranslation > 40 {
+                                // Swiped Right -> Go to previous pack or Exit to Menu
+                                if selectedPackIndex > 0 {
+                                    HapticService.shared.buttonTap()
+                                    withAnimation(.easeInOut(duration: 0.25)) {
+                                        selectedPackIndex -= 1
+                                    }
+                                } else {
+                                    // At the first pack (5x5), swiping right exits back to Menu
+                                    HapticService.shared.buttonTap()
+                                    onBack()
+                                }
+                            }
+                        }
+                )
             }
         }
     }
