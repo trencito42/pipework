@@ -157,11 +157,12 @@ public struct BoardCanvasView: View {
         let cornerRadius: CGFloat = min(22, geometry.cellSize * 0.35)
         let boardPath = Path(roundedRect: rect, cornerRadius: cornerRadius)
 
-        // Soft ambient shadow
-        context.drawLayer { layer in
-            layer.addFilter(.shadow(color: Color.black.opacity(0.45), radius: 16, x: 0, y: 8))
-            layer.fill(boardPath, with: .color(PipeworkTheme.bgCanvas))
-        }
+        // Soft ambient shadow layer
+        let shadowRect = rect.offsetBy(dx: 0, dy: 6)
+        context.fill(
+            Path(roundedRect: shadowRect, cornerRadius: cornerRadius),
+            with: .color(Color.black.opacity(0.35))
+        )
 
         // Deep matte board surface
         context.fill(
@@ -231,14 +232,13 @@ public struct BoardCanvasView: View {
             let path = buildContinuousPath(coordinates: pathModel.coordinates, geometry: geometry)
 
             // 1. Soft depth drop shadow
-            context.drawLayer { layer in
-                layer.addFilter(.shadow(color: Color.black.opacity(0.4), radius: cs * 0.08, x: 0, y: cs * 0.04))
-                layer.stroke(
-                    path,
-                    with: .color(Color.black.opacity(0.5)),
-                    style: StrokeStyle(lineWidth: outerWidth + 2, lineCap: .round, lineJoin: .round)
-                )
-            }
+            let shadowOffset = CGSize(width: 0, height: cs * 0.04)
+            let shadowPath = buildContinuousPath(coordinates: pathModel.coordinates, geometry: geometry, offset: shadowOffset)
+            context.stroke(
+                shadowPath,
+                with: .color(Color.black.opacity(0.4)),
+                style: StrokeStyle(lineWidth: outerWidth + 2, lineCap: .round, lineJoin: .round)
+            )
 
             // 2. Matte dark casing sleeve (clean, dark container)
             context.stroke(
@@ -247,26 +247,30 @@ public struct BoardCanvasView: View {
                 style: StrokeStyle(lineWidth: outerWidth, lineCap: .round, lineJoin: .round)
             )
 
-            // 3. Vibrant fluid color body
-            context.drawLayer { layer in
-                if isConnected {
-                    layer.addFilter(.shadow(color: fluidColor.opacity(0.45), radius: cs * 0.08))
-                }
-                layer.stroke(
+            // 3. Subtle ambient glow aura if connected
+            if isConnected {
+                context.stroke(
                     path,
-                    with: .color(fluidColor),
-                    style: StrokeStyle(lineWidth: coreWidth, lineCap: .round, lineJoin: .round)
+                    with: .color(fluidColor.opacity(0.28)),
+                    style: StrokeStyle(lineWidth: outerWidth + 4, lineCap: .round, lineJoin: .round)
                 )
             }
 
-            // 4. Subtle center core luminescence
+            // 4. Vibrant fluid color body
+            context.stroke(
+                path,
+                with: .color(fluidColor),
+                style: StrokeStyle(lineWidth: coreWidth, lineCap: .round, lineJoin: .round)
+            )
+
+            // 5. Subtle center core luminescence
             context.stroke(
                 path,
                 with: .color(Color.white.opacity(isConnected ? 0.35 : 0.20)),
                 style: StrokeStyle(lineWidth: innerGlowWidth, lineCap: .round, lineJoin: .round)
             )
 
-            // 5. Flowing fluid pulse dots on connected lines
+            // 6. Flowing fluid pulse dots on connected lines
             if isConnected && !reduceMotion {
                 let speed: CGFloat = 36.0
                 let cycleLength: CGFloat = cs * 1.8
@@ -322,14 +326,19 @@ public struct BoardCanvasView: View {
         // Active glowing head ring
         let ringRadius = cs * 0.30
         let ringRect = CGRect(x: headCenter.x - ringRadius, y: headCenter.y - ringRadius, width: ringRadius * 2, height: ringRadius * 2)
-        context.drawLayer { layer in
-            layer.addFilter(.shadow(color: fluidColor.opacity(0.6), radius: 6))
-            layer.stroke(
-                Path(ellipseIn: ringRect),
-                with: .color(Color.white),
-                lineWidth: 2.5
-            )
-        }
+        
+        // Aura
+        context.stroke(
+            Path(ellipseIn: ringRect.insetBy(dx: -2, dy: -2)),
+            with: .color(fluidColor.opacity(0.4)),
+            lineWidth: 4
+        )
+        // Solid ring
+        context.stroke(
+            Path(ellipseIn: ringRect),
+            with: .color(Color.white),
+            lineWidth: 2.5
+        )
     }
 
     // MARK: - 5. Concentric Modern Terminal Sockets
@@ -362,29 +371,26 @@ public struct BoardCanvasView: View {
             // Active / Connected Glow Ring
             if isConnected || isCurrentActive {
                 let lockRingRect = outerRect.insetBy(dx: -2.5, dy: -2.5)
-                context.drawLayer { layer in
-                    layer.addFilter(.shadow(color: fluidColor.opacity(0.6), radius: 6))
-                    layer.stroke(
-                        Path(ellipseIn: lockRingRect),
-                        with: .color(fluidColor.opacity(0.85)),
-                        lineWidth: 2.0
-                    )
-                }
+                context.stroke(
+                    Path(ellipseIn: lockRingRect.insetBy(dx: -1.5, dy: -1.5)),
+                    with: .color(fluidColor.opacity(0.35)),
+                    lineWidth: 3.5
+                )
+                context.stroke(
+                    Path(ellipseIn: lockRingRect),
+                    with: .color(fluidColor.opacity(0.85)),
+                    lineWidth: 2.0
+                )
             }
 
             // Inner Vibrant Fluid Core
             let coreRect = CGRect(x: center.x - coreR, y: center.y - coreR, width: coreR * 2, height: coreR * 2)
             let corePath = Path(ellipseIn: coreRect)
 
-            context.drawLayer { layer in
-                if isConnected {
-                    layer.addFilter(.shadow(color: fluidColor.opacity(0.5), radius: 6))
-                }
-                context.fill(
-                    corePath,
-                    with: .color(fluidColor)
-                )
-            }
+            context.fill(
+                corePath,
+                with: .color(fluidColor)
+            )
 
             // Clean white specular highlight dot
             let specSize = coreR * 0.45
