@@ -3,20 +3,24 @@ import SwiftUI
 /// High-performance Canvas renderer recreating the tactile industrial look of PIPEWORK.
 public struct BoardCanvasView: View {
     @Binding public var state: PuzzleState
+    @Binding public var history: MoveHistory
     public let showAccessibilitySymbols: Bool
     public let blockedCoord: GridCoord?
     public let onBlockedCoordHandled: () -> Void
 
     @State private var dragPointerLocation: CGPoint? = nil
+    @State private var isCurrentlyDragging: Bool = false
     private let gestureInterpreter = GridGestureInterpreter()
 
     public init(
         state: Binding<PuzzleState>,
+        history: Binding<MoveHistory>,
         showAccessibilitySymbols: Bool = false,
         blockedCoord: GridCoord? = nil,
         onBlockedCoordHandled: @escaping () -> Void = {}
     ) {
         self._state = state
+        self._history = history
         self.showAccessibilitySymbols = showAccessibilitySymbols
         self.blockedCoord = blockedCoord
         self.onBlockedCoordHandled = onBlockedCoordHandled
@@ -45,20 +49,27 @@ public struct BoardCanvasView: View {
                     DragGesture(minimumDistance: 0, coordinateSpace: .local)
                         .onChanged { value in
                             dragPointerLocation = value.location
-                            gestureInterpreter.handleTouchDown(
-                                at: value.startLocation,
-                                geometry: geometry,
-                                state: &state
-                            )
-                            gestureInterpreter.handleTouchMoved(
-                                to: value.location,
-                                geometry: geometry,
-                                state: &state
-                            )
+
+                            if !isCurrentlyDragging {
+                                isCurrentlyDragging = true
+                                gestureInterpreter.beginStroke(
+                                    at: value.startLocation,
+                                    geometry: geometry,
+                                    state: &state,
+                                    history: &history
+                                )
+                            } else {
+                                gestureInterpreter.continueStroke(
+                                    to: value.location,
+                                    geometry: geometry,
+                                    state: &state
+                                )
+                            }
                         }
                         .onEnded { _ in
                             dragPointerLocation = nil
-                            gestureInterpreter.handleTouchEnded(state: &state)
+                            isCurrentlyDragging = false
+                            gestureInterpreter.endStroke(state: &state)
                         }
                 )
             }
@@ -80,10 +91,10 @@ public struct BoardCanvasView: View {
         let boltDiameter: CGFloat = 8
         let boltMargin: CGFloat = 8
         let corners: [CGPoint] = [
-            CGPoint(x: rect.minX + boltMargin, y: rect.minY + boltMargin), // Top-Left
-            CGPoint(x: rect.maxX - boltMargin, y: rect.minY + boltMargin), // Top-Right
-            CGPoint(x: rect.minX + boltMargin, y: rect.maxY - boltMargin), // Bottom-Left
-            CGPoint(x: rect.maxX - boltMargin, y: rect.maxY - boltMargin)  // Bottom-Right
+            CGPoint(x: rect.minX + boltMargin, y: rect.minY + boltMargin),
+            CGPoint(x: rect.maxX - boltMargin, y: rect.minY + boltMargin),
+            CGPoint(x: rect.minX + boltMargin, y: rect.maxY - boltMargin),
+            CGPoint(x: rect.maxX - boltMargin, y: rect.maxY - boltMargin)
         ]
 
         for corner in corners {
@@ -102,7 +113,6 @@ public struct BoardCanvasView: View {
     // MARK: - 2. Grid Plates & Registration Ticks
 
     private func drawGridPlates(context: GraphicsContext, geometry: BoardGeometry) {
-        let cs = geometry.cellSize
         for y in 0..<geometry.gridSize.height {
             for x in 0..<geometry.gridSize.width {
                 let coord = GridCoord(x: x, y: y)
@@ -185,7 +195,7 @@ public struct BoardCanvasView: View {
 
             // 7. Animated Fluid Pulses (when line is connected)
             if isConnected {
-                let speed: CGFloat = 65.0 // points per second
+                let speed: CGFloat = 65.0
                 let cycleLength: CGFloat = cs * 1.6
                 let dashOffset = CGFloat(time * speed).truncatingRemainder(dividingBy: cycleLength)
 

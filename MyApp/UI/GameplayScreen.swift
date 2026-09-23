@@ -56,6 +56,7 @@ public struct GameplayScreen: View {
                 ZStack {
                     BoardCanvasView(
                         state: $puzzleState,
+                        history: $history,
                         showAccessibilitySymbols: showSymbols,
                         blockedCoord: blockedCoord,
                         onBlockedCoordHandled: { blockedCoord = nil }
