@@ -3,6 +3,7 @@ import Foundation
 /// Pure Swift unit test harness for the PIPEWORK puzzle engine.
 public struct EngineTests {
 
+    @MainActor
     public static func runAll() -> Bool {
         print("🧪 [PIPEWORK EngineTests] Starting test suite...")
         var passedCount = 0
@@ -176,6 +177,24 @@ public struct EngineTests {
 
             verify(state.occupiedCellCount == 0, "0 cells occupied after undo")
             verify(state.paths["coolant"]?.coordinates.isEmpty == true, "Path cleared after undo")
+        }
+
+        // Test 8: CSP PuzzleSolver Verification
+        do {
+            let level = LevelRepository.sector5x5Pack.levels[0]
+            let solver = PuzzleSolver(gridSize: GridSize(dimension: level.size), pairs: level.pairs)
+            let result = solver.solve(maxSolutions: 2)
+            verify(result.isSolvable, "CSP Solver verifies 5x5 level is solvable")
+            verify(result.paths != nil, "CSP Solver extracted valid solution paths")
+        }
+
+        // Test 9: Persistence Service Integration
+        do {
+            let persistence = PersistenceService.shared
+            persistence.recordLevelCompletion(levelId: "test_level", moves: 3, parMoves: 3)
+            verify(persistence.isLevelCompleted("test_level"), "Persistence recorded level completion")
+            let record = persistence.getRecord(for: "test_level")
+            verify(record?.starsEarned == 3, "3 stars awarded for par move completion")
         }
 
         print("🧪 [PIPEWORK EngineTests] Finished. Passed: \(passedCount), Failed: \(failedCount)")

@@ -1,31 +1,42 @@
 import SwiftUI
 
-/// Main native gameplay screen for PIPEWORK.
+/// Main native interactive gameplay screen for PIPEWORK.
 public struct GameplayScreen: View {
-    @State private var packs: [LevelPack] = LevelRepository.allPacks
-    @State private var packIndex: Int = 2 // Default to 7x7 Sector Pack
-    @State private var levelIndex: Int = 0
+    @ObservedObject private var persistence = PersistenceService.shared
 
+    public let initialPack: LevelPack
+    public let initialLevel: LevelDefinition
+    public let isProceduralMode: Bool
+    public let onExitToMenu: () -> Void
+    public let onOpenSectorMatrix: () -> Void
+
+    @State private var currentPack: LevelPack
+    @State private var currentLevel: LevelDefinition
     @State private var puzzleState: PuzzleState
     @State private var history = MoveHistory()
-    @State private var showSymbols: Bool = false
     @State private var isVictoryPresented: Bool = false
     @State private var toastMessage: String? = nil
     @State private var toastWorkItem: DispatchWorkItem? = nil
     @State private var blockedCoord: GridCoord? = nil
     @State private var isSoundOn: Bool = true
+    @State private var isSettingsOpen: Bool = false
 
-    public init() {
-        let initialLevel = LevelRepository.sector7x7Pack.levels[0]
-        _puzzleState = State(initialValue: initialLevel.createInitialState())
-    }
+    public init(
+        pack: LevelPack = LevelRepository.sector7x7Pack,
+        level: LevelDefinition = LevelRepository.sector7x7Pack.levels[0],
+        isProceduralMode: Bool = false,
+        onExitToMenu: @escaping () -> Void = {},
+        onOpenSectorMatrix: @escaping () -> Void = {}
+    ) {
+        self.initialPack = pack
+        self.initialLevel = level
+        self.isProceduralMode = isProceduralMode
+        self.onExitToMenu = onExitToMenu
+        self.onOpenSectorMatrix = onOpenSectorMatrix
 
-    private var currentPack: LevelPack {
-        packs[packIndex]
-    }
-
-    private var currentLevel: LevelDefinition {
-        currentPack.levels[levelIndex]
+        _currentPack = State(initialValue: pack)
+        _currentLevel = State(initialValue: level)
+        _puzzleState = State(initialValue: level.createInitialState())
     }
 
     public var body: some View {
@@ -57,7 +68,7 @@ public struct GameplayScreen: View {
                     BoardCanvasView(
                         state: $puzzleState,
                         history: $history,
-                        showAccessibilitySymbols: showSymbols,
+                        showAccessibilitySymbols: persistence.profile.accessibilitySymbolsEnabled,
                         blockedCoord: blockedCoord,
                         onBlockedCoordHandled: { blockedCoord = nil }
                     )
@@ -97,7 +108,7 @@ public struct GameplayScreen: View {
             // Victory Modal
             if isVictoryPresented {
                 VictoryOverlayView(
-                    sectorName: currentPack.name,
+                    sectorName: "\(currentPack.name) — Level \(currentLevel.number)",
                     moves: puzzleState.moveCount,
                     connectedFluids: puzzleState.connectedLineCount,
                     totalFluids: puzzleState.totalLineCount,
@@ -108,10 +119,25 @@ public struct GameplayScreen: View {
         }
         .onChange(of: puzzleState.isSolved) { _, isSolved in
             if isSolved {
+                // Record persistence progress
+                persistence.recordLevelCompletion(
+                    levelId: currentLevel.id,
+                    moves: puzzleState.moveCount,
+                    parMoves: currentLevel.parMoves
+                )
+
                 withAnimation(.spring(duration: 0.4)) {
                     isVictoryPresented = true
                 }
             }
+        }
+        .sheet(isPresented: $isSettingsOpen) {
+            SettingsScreen()
+        }
+        .onAppear {
+            isSoundOn = persistence.profile.soundEnabled
+            AudioService.shared.isEnabled = isSoundOn
+            HapticService.shared.isEnabled = persistence.profile.hapticsEnabled
         }
     }
 
@@ -119,51 +145,61 @@ public struct GameplayScreen: View {
 
     private var headerZone: some View {
         HStack {
+            // Exit / Sector Matrix button
+            Button(action: onOpenSectorMatrix) {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .bold))
+                    Text("SECTORS")
+                        .font(PipeworkTheme.monoFont(size: 11, weight: .bold))
+                }
+                .foregroundColor(PipeworkTheme.textMain)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(PipeworkTheme.panelBase)
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(PipeworkTheme.borderDim, lineWidth: 1))
+                )
+            }
+
+            Spacer()
+
             // Brand Title with Status Dot
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Circle()
                     .fill(PipeworkTheme.primaryCyan)
                     .frame(width: 6, height: 6)
                     .shadow(color: PipeworkTheme.primaryCyan, radius: 4)
 
                 Text("PIPEWORK")
-                    .font(PipeworkTheme.roundedFont(size: 20, weight: .heavy))
+                    .font(PipeworkTheme.roundedFont(size: 18, weight: .heavy))
                     .foregroundColor(PipeworkTheme.textMain)
-                    .tracking(2.5)
+                    .tracking(2.0)
             }
 
             Spacer()
 
-            // Sound Toggle & Sector Display Badge
-            HStack(spacing: 8) {
+            // Settings & Sound Buttons
+            HStack(spacing: 6) {
                 Button(action: toggleSound) {
                     Image(systemName: isSoundOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(isSoundOn ? PipeworkTheme.textMuted : PipeworkTheme.textDim)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(isSoundOn ? PipeworkTheme.textMain : PipeworkTheme.textDim)
                         .frame(width: 32, height: 32)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.white.opacity(0.04))
-                        )
+                        .background(RoundedRectangle(cornerRadius: 6).fill(PipeworkTheme.panelBase))
                 }
 
-                Text(currentPack.name)
-                    .font(PipeworkTheme.monoFont(size: 11, weight: .bold))
-                    .foregroundColor(Color(red: 109/255, green: 125/255, blue: 145/255))
-                    .tracking(1.4)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(Color(red: 15/255, green: 19/255, blue: 24/255))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(Color(red: 28/255, green: 34/255, blue: 44/255), lineWidth: 1)
-                            )
-                    )
+                Button(action: { isSettingsOpen = true }) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(PipeworkTheme.textMuted)
+                        .frame(width: 32, height: 32)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(PipeworkTheme.panelBase))
+                }
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 16)
         .padding(.top, 8)
     }
 
@@ -201,7 +237,6 @@ public struct GameplayScreen: View {
     ) -> some View {
         Button(action: action) {
             ZStack {
-                // Inset Outer Ring
                 Circle()
                     .fill(
                         LinearGradient(
@@ -231,6 +266,7 @@ public struct GameplayScreen: View {
     private func toggleSound() {
         isSoundOn.toggle()
         AudioService.shared.isEnabled = isSoundOn
+        persistence.updateSettings(sound: isSoundOn)
         HapticService.shared.terminalTouchDown()
     }
 
@@ -246,7 +282,10 @@ public struct GameplayScreen: View {
         guard !puzzleState.isSolved else { return }
 
         // Find a pair whose current path does not match canonical solution
-        guard let canonical = currentLevel.canonicalSolution else { return }
+        guard let canonical = currentLevel.canonicalSolution else {
+            showToast("DIAGNOSTIC UNAVAILABLE")
+            return
+        }
 
         var targetDef: CanonicalPathDefinition? = nil
         for pathDef in canonical {
@@ -297,20 +336,47 @@ public struct GameplayScreen: View {
     }
 
     private func loadNextSector() {
-        if levelIndex + 1 < currentPack.levels.count {
-            levelIndex += 1
-        } else if packIndex + 1 < packs.count {
-            packIndex += 1
-            levelIndex = 0
-        } else {
-            packIndex = 0
-            levelIndex = 0
+        if isProceduralMode {
+            // Generate next procedural puzzle
+            let nextLevel = LevelGenerator.generateLevel(
+                size: currentLevel.size,
+                pairCount: currentLevel.pairs.count,
+                packId: "procedural",
+                levelNumber: currentLevel.number + 1
+            )
+            withAnimation(.easeInOut(duration: 0.3)) {
+                currentLevel = nextLevel
+                puzzleState = nextLevel.createInitialState()
+                history.clear()
+                isVictoryPresented = false
+            }
+            return
         }
 
-        withAnimation(.easeInOut(duration: 0.3)) {
-            puzzleState = currentLevel.createInitialState()
-            history.clear()
-            isVictoryPresented = false
+        let allPacks = LevelRepository.allPacks
+        let currentPackIdx = allPacks.firstIndex(where: { $0.id == currentPack.id }) ?? 0
+        let currentLevelIdx = currentPack.levels.firstIndex(where: { $0.id == currentLevel.id }) ?? 0
+
+        if currentLevelIdx + 1 < currentPack.levels.count {
+            let nextLevel = currentPack.levels[currentLevelIdx + 1]
+            withAnimation(.easeInOut(duration: 0.3)) {
+                currentLevel = nextLevel
+                puzzleState = nextLevel.createInitialState()
+                history.clear()
+                isVictoryPresented = false
+            }
+        } else if currentPackIdx + 1 < allPacks.count {
+            let nextPack = allPacks[currentPackIdx + 1]
+            let nextLevel = nextPack.levels[0]
+            withAnimation(.easeInOut(duration: 0.3)) {
+                currentPack = nextPack
+                currentLevel = nextLevel
+                puzzleState = nextLevel.createInitialState()
+                history.clear()
+                isVictoryPresented = false
+            }
+        } else {
+            onOpenSectorMatrix()
         }
     }
 

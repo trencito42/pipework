@@ -53,6 +53,11 @@ public struct GridCoord: Codable, Hashable, Sendable, CustomStringConvertible, C
         ]
     }
 
+    /// Returns bounded orthogonal neighbors within a given grid size.
+    public func orthogonalNeighbors(in gridSize: GridSize) -> [GridCoord] {
+        orthogonalNeighbors.filter { gridSize.contains($0) }
+    }
+
     public static func < (lhs: GridCoord, rhs: GridCoord) -> Bool {
         if lhs.y != rhs.y {
             return lhs.y < rhs.y
