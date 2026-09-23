@@ -1,27 +1,38 @@
 import Foundation
 
-/// Solution-first puzzle generator creating validated, 100% full-board coverage, uniquely solvable puzzles.
+/// Solution-first puzzle generator creating validated, 100% full-board coverage, uniquely solvable puzzles
+/// with certified immunity to premature partial-coverage routing.
 public enum LevelGenerator {
 
-    /// Generates a validated, uniquely solvable level with full board coverage.
+    /// Generates a certified production-ready level satisfying:
+    /// 1. 100% Canonical full-board coverage
+    /// 2. Exactly 1 unique full-board solution (Solver A)
+    /// 3. Zero premature complete routings (Solver B)
+    /// 4. High topological quality score
     public static func generateLevel(
         size: Int,
         pairCount: Int,
         packId: String = "curated",
         levelNumber: Int = 1,
-        maxAttempts: Int = 100
+        maxAttempts: Int = 200
     ) -> LevelDefinition {
         let gridSize = GridSize(dimension: size)
         let fluids: [FluidType] = [.coolant, .fuel, .chemical, .pressure, .thermal, .auxiliary, .plasma]
 
         for _ in 0..<maxAttempts {
             if let candidate = attemptGenerate(gridSize: gridSize, pairCount: pairCount, fluids: fluids, packId: packId, levelNumber: levelNumber) {
-                // Verify strict uniqueness with CSP Solver
-                let solver = PuzzleSolver(gridSize: gridSize, pairs: candidate.pairs)
-                let result = solver.solve(maxSolutions: 2)
-
-                if result.isSolvable && result.solutionCount == 1 {
+                // Strict validation through LevelValidator
+                do {
+                    try LevelValidator.validate(
+                        candidate,
+                        enforceUniqueSolution: true,
+                        enforceNoPrematureRouting: true,
+                        enforceQualityFilter: true
+                    )
                     return candidate
+                } catch {
+                    // Candidate failed one of the strict tests, continue searching
+                    continue
                 }
             }
         }
@@ -61,7 +72,7 @@ public enum LevelGenerator {
         var unassignedCount = gridSize.totalCells - pairCount
         var growthStuck = 0
 
-        while unassignedCount > 0 && growthStuck < 150 {
+        while unassignedCount > 0 && growthStuck < 200 {
             var grownAny = false
             for p in 0..<pairCount {
                 let head = paths[p].last!
@@ -82,9 +93,9 @@ public enum LevelGenerator {
 
         guard unassignedCount == 0 else { return nil }
 
-        // 3. Ensure all paths have at least 2 cells
+        // 3. Ensure all paths have at least 3 cells for good quality
         for path in paths {
-            if path.count < 2 { return nil }
+            if path.count < 3 { return nil }
         }
 
         // 4. Construct pairs and canonical paths
@@ -115,6 +126,20 @@ public enum LevelGenerator {
             )
         }
 
+        let report = LevelQualityScorer.evaluate(
+            LevelDefinition(
+                id: "\(packId)-\(levelNumber)",
+                packId: packId,
+                number: levelNumber,
+                size: gridSize.width,
+                pairs: pairs,
+                canonicalSolution: canonicalSolution,
+                parMoves: pairCount,
+                difficultyScore: Double(pairCount) * 0.8,
+                signature: "candidate"
+            )
+        )
+
         return LevelDefinition(
             id: "\(packId)-\(levelNumber)",
             packId: packId,
@@ -123,7 +148,7 @@ public enum LevelGenerator {
             pairs: pairs,
             canonicalSolution: canonicalSolution,
             parMoves: pairCount,
-            difficultyScore: Double(pairCount) * 0.8,
+            difficultyScore: report.score * 5.0,
             signature: "gen_\(gridSize.width)x\(gridSize.height)_\(levelNumber)"
         )
     }

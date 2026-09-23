@@ -271,19 +271,152 @@ public struct EngineTests {
         }
 
         // ==========================================
-        // 4. LEVEL VALIDATION & CSP SOLVER TESTS
+        // 4. LEVEL VALIDATION & DUAL SOLVER TESTS
         // ==========================================
 
-        // Curated levels pass strict validation
+        // Test 1 (Bad Level): Level with premature shortcut is rejected
+        do {
+            let badLevel = LevelDefinition(
+                id: "test-bad-shortcut",
+                packId: "test",
+                number: 1,
+                size: 5,
+                pairs: [
+                    TerminalPairDefinition(id: "coolant", fluidType: .coolant, terminalA: GridCoord(x: 4, y: 3), terminalB: GridCoord(x: 3, y: 2)),
+                    TerminalPairDefinition(id: "fuel", fluidType: .fuel, terminalA: GridCoord(x: 4, y: 4), terminalB: GridCoord(x: 1, y: 3)),
+                    TerminalPairDefinition(id: "chemical", fluidType: .chemical, terminalA: GridCoord(x: 2, y: 1), terminalB: GridCoord(x: 0, y: 2)),
+                    TerminalPairDefinition(id: "pressure", fluidType: .pressure, terminalA: GridCoord(x: 4, y: 2), terminalB: GridCoord(x: 3, y: 1))
+                ],
+                canonicalSolution: [
+                    CanonicalPathDefinition(lineId: "coolant", path: [
+                        GridCoord(x: 4, y: 3), GridCoord(x: 3, y: 3), GridCoord(x: 2, y: 3), GridCoord(x: 2, y: 2), GridCoord(x: 3, y: 2)
+                    ]),
+                    CanonicalPathDefinition(lineId: "fuel", path: [
+                        GridCoord(x: 4, y: 4), GridCoord(x: 3, y: 4), GridCoord(x: 2, y: 4), GridCoord(x: 1, y: 4),
+                        GridCoord(x: 0, y: 4), GridCoord(x: 0, y: 3), GridCoord(x: 1, y: 3)
+                    ]),
+                    CanonicalPathDefinition(lineId: "chemical", path: [
+                        GridCoord(x: 2, y: 1), GridCoord(x: 2, y: 0), GridCoord(x: 1, y: 0), GridCoord(x: 0, y: 0),
+                        GridCoord(x: 0, y: 1), GridCoord(x: 1, y: 1), GridCoord(x: 1, y: 2), GridCoord(x: 0, y: 2)
+                    ]),
+                    CanonicalPathDefinition(lineId: "pressure", path: [
+                        GridCoord(x: 4, y: 2), GridCoord(x: 4, y: 1), GridCoord(x: 4, y: 0), GridCoord(x: 3, y: 0), GridCoord(x: 3, y: 1)
+                    ])
+                ],
+                parMoves: 4,
+                difficultyScore: 1.0,
+                signature: "bad_test"
+            )
+
+            let solver = PuzzleSolver(gridSize: GridSize(dimension: 5), pairs: badLevel.pairs)
+            let prematureResult = solver.findPrematureSolution()
+            verify(prematureResult != nil, "Solver B detected premature shortcut on bad level")
+            if let premature = prematureResult {
+                verify(premature.coveredCellCount < 25, "Premature solution coverage \(premature.coveredCellCount) < 25")
+            }
+
+            var caughtPremature = false
+            do {
+                _ = try LevelValidator.validate(badLevel, enforceUniqueSolution: true, enforceNoPrematureRouting: true)
+            } catch LevelValidator.ValidationError.prematureCompleteRoutingExists {
+                caughtPremature = true
+            } catch {
+                caughtPremature = false
+            }
+            verify(caughtPremature, "LevelValidator correctly rejected bad level with .prematureCompleteRoutingExists")
+        }
+
+        // Test 2 (Good Level): Certified level is accepted with uniqueness and zero premature routings
+        do {
+            let goodLevel = LevelRepository.sector5x5Pack.levels[0]
+            do {
+                let report = try LevelValidator.validate(goodLevel, enforceUniqueSolution: true, enforceNoPrematureRouting: true, enforceQualityFilter: true)
+                verify(report.isAccepted, "Good level 5x5-01 is accepted")
+                verify(report.isUniqueFullBoard, "Good level has exactly 1 full-board solution")
+                verify(!report.hasPrematureRouting, "Good level has 0 premature routings")
+                verify(report.coveredCellCount == 25, "Good level has 100% canonical coverage (25/25)")
+            } catch {
+                verify(false, "Good level unexpectedly failed validation: \(error)")
+            }
+        }
+
+        // Test 3 (Unsolvable Level): Level with topologically impossible configuration is rejected
+        do {
+            let unsolvableLevel = LevelDefinition(
+                id: "test-unsolvable",
+                packId: "test",
+                number: 1,
+                size: 3,
+                pairs: [
+                    TerminalPairDefinition(id: "coolant", fluidType: .coolant, terminalA: GridCoord(x: 0, y: 0), terminalB: GridCoord(x: 2, y: 2)),
+                    TerminalPairDefinition(id: "fuel", fluidType: .fuel, terminalA: GridCoord(x: 0, y: 2), terminalB: GridCoord(x: 2, y: 0)),
+                    TerminalPairDefinition(id: "chemical", fluidType: .chemical, terminalA: GridCoord(x: 1, y: 0), terminalB: GridCoord(x: 1, y: 2))
+                ],
+                canonicalSolution: [
+                    CanonicalPathDefinition(lineId: "coolant", path: [GridCoord(x: 0, y: 0), GridCoord(x: 1, y: 1), GridCoord(x: 2, y: 2)])
+                ],
+                parMoves: 3,
+                difficultyScore: 1.0,
+                signature: "unsolvable"
+            )
+
+            var caughtUnsolvable = false
+            do {
+                _ = try LevelValidator.validate(unsolvableLevel, enforceUniqueSolution: true, enforceNoPrematureRouting: true)
+            } catch {
+                caughtUnsolvable = true
+            }
+            verify(caughtUnsolvable, "LevelValidator correctly rejected unsolvable level")
+        }
+
+        // Test 4 (Multiple Full Solutions): Level with ambiguous solution is rejected
+        do {
+            let multipleSolLevel = LevelDefinition(
+                id: "test-multiple",
+                packId: "test",
+                number: 1,
+                size: 4,
+                pairs: [
+                    TerminalPairDefinition(id: "coolant", fluidType: .coolant, terminalA: GridCoord(x: 0, y: 0), terminalB: GridCoord(x: 3, y: 0)),
+                    TerminalPairDefinition(id: "fuel", fluidType: .fuel, terminalA: GridCoord(x: 0, y: 3), terminalB: GridCoord(x: 3, y: 3))
+                ],
+                canonicalSolution: [
+                    CanonicalPathDefinition(lineId: "coolant", path: [
+                        GridCoord(x: 0, y: 0), GridCoord(x: 0, y: 1), GridCoord(x: 1, y: 1), GridCoord(x: 1, y: 0),
+                        GridCoord(x: 2, y: 0), GridCoord(x: 2, y: 1), GridCoord(x: 3, y: 1), GridCoord(x: 3, y: 0)
+                    ]),
+                    CanonicalPathDefinition(lineId: "fuel", path: [
+                        GridCoord(x: 0, y: 3), GridCoord(x: 0, y: 2), GridCoord(x: 1, y: 2), GridCoord(x: 1, y: 3),
+                        GridCoord(x: 2, y: 3), GridCoord(x: 2, y: 2), GridCoord(x: 3, y: 2), GridCoord(x: 3, y: 3)
+                    ])
+                ],
+                parMoves: 2,
+                difficultyScore: 1.0,
+                signature: "multiple"
+            )
+
+            var caughtMultipleOrPremature = false
+            do {
+                _ = try LevelValidator.validate(multipleSolLevel, enforceUniqueSolution: true, enforceNoPrematureRouting: true)
+            } catch LevelValidator.ValidationError.notUniquelySolvable {
+                caughtMultipleOrPremature = true
+            } catch LevelValidator.ValidationError.prematureCompleteRoutingExists {
+                caughtMultipleOrPremature = true
+            } catch {
+                caughtMultipleOrPremature = true
+            }
+            verify(caughtMultipleOrPremature, "LevelValidator rejected ambiguous / non-unique level")
+        }
+
+        // Test 5 (All Curated Shipped Levels): All 9 levels across 5x5, 6x6, 7x7 pass strict validation
         do {
             for pack in LevelRepository.allPacks {
                 for level in pack.levels {
                     do {
-                        let enforceUniqueness = level.size <= 6
-                        try LevelValidator.validate(level, enforceUniqueSolution: enforceUniqueness)
-                        verify(true, "Level \(level.id) in \(pack.name) passed strict validation")
+                        let report = try LevelValidator.validate(level, enforceUniqueSolution: true, enforceNoPrematureRouting: true, enforceQualityFilter: true)
+                        verify(report.isAccepted && report.isUniqueFullBoard && !report.hasPrematureRouting, "Shipped level \(level.id) strictly verified (Score: \(String(format: "%.2f", report.qualityScore)))")
                     } catch {
-                        verify(false, "Level \(level.id) failed validation: \(error)")
+                        verify(false, "Shipped level \(level.id) failed validation: \(error)")
                     }
                 }
             }

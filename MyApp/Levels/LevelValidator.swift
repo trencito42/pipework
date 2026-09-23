@@ -1,7 +1,33 @@
 import Foundation
 
-/// Validates mathematical integrity and solution-first rules of PIPEWORK puzzle definitions.
+/// Validates mathematical integrity, uniqueness, coverage constraints, and design quality of PIPEWORK level definitions.
 public enum LevelValidator {
+
+    public struct ValidationReport: Sendable, CustomStringConvertible {
+        public let levelId: String
+        public let coveredCellCount: Int
+        public let totalCellCount: Int
+        public let fullBoardSolutionCount: Int
+        public let hasPrematureRouting: Bool
+        public let prematureCoverageCount: Int?
+        public let isUniqueFullBoard: Bool
+        public let qualityScore: Double
+        public let isAccepted: Bool
+        public let rejectionReason: String?
+
+        public var description: String {
+            var lines = [
+                "Level: \(levelId)",
+                "Canonical coverage: \(coveredCellCount)/\(totalCellCount)",
+                "Full-board solutions found: \(fullBoardSolutionCount)",
+                "Premature complete routing found: \(hasPrematureRouting ? "YES (coverage: \(prematureCoverageCount ?? 0)/\(totalCellCount))" : "NO")",
+                "Unique full-board solution: \(isUniqueFullBoard ? "YES" : "NO")",
+                String(format: "Quality score: %.2f", qualityScore),
+                isAccepted ? "ACCEPTED" : "REJECTED: \(rejectionReason ?? "Unknown")"
+            ]
+            return lines.joined(separator: "\n")
+        }
+    }
 
     public enum ValidationError: Error, CustomStringConvertible {
         case emptyPairs
@@ -13,7 +39,10 @@ public enum LevelValidator {
         case pathsOverlap(GridCoord)
         case endpointsMismatch(String)
         case incompleteBoardCoverage(covered: Int, total: Int)
+        case noFullBoardSolution
         case notUniquelySolvable(solutions: Int)
+        case prematureCompleteRoutingExists(covered: Int, total: Int)
+        case qualityFilterFailed(reasons: [String])
 
         public var description: String {
             switch self {
@@ -35,17 +64,26 @@ public enum LevelValidator {
                 return "Canonical path endpoints do not match defined pair terminals for '\(line)'."
             case .incompleteBoardCoverage(let covered, let total):
                 return "Canonical solution covers \(covered)/\(total) cells. 100% full-board coverage required."
+            case .noFullBoardSolution:
+                return "No 100% full-board coverage solution exists for this endpoint layout."
             case .notUniquelySolvable(let count):
-                return "Level has \(count) solutions. Exactly 1 unique solution required."
+                return "Level has \(count) full-board solutions. Exactly 1 unique solution required."
+            case .prematureCompleteRoutingExists(let covered, let total):
+                return "Level allows all pairs to connect with only \(covered)/\(total) cells. allPairsConnected => fullBoardCoverage violated."
+            case .qualityFilterFailed(let reasons):
+                return "Level failed quality filter: \(reasons.joined(separator: "; "))"
             }
         }
     }
 
-    /// Performs strict validation on a level definition.
+    /// Performs strict validation on a level definition and returns a comprehensive validation report.
+    @discardableResult
     public static func validate(
         _ level: LevelDefinition,
-        enforceUniqueSolution: Bool = false
-    ) throws {
+        enforceUniqueSolution: Bool = true,
+        enforceNoPrematureRouting: Bool = true,
+        enforceQualityFilter: Bool = false
+    ) throws -> ValidationReport {
         let gridSize = GridSize(dimension: level.size)
         guard !level.pairs.isEmpty else {
             throw ValidationError.emptyPairs
@@ -81,7 +119,6 @@ public enum LevelValidator {
                 throw ValidationError.pathDiscontinuous(pathDef.lineId)
             }
 
-            // Check endpoints match
             let start = coords.first!
             let end = coords.last!
             let validEndpoints = (start == pair.terminalA && end == pair.terminalB) || (start == pair.terminalB && end == pair.terminalA)
@@ -89,7 +126,6 @@ public enum LevelValidator {
                 throw ValidationError.endpointsMismatch(pathDef.lineId)
             }
 
-            // Check continuity and self-intersection
             var visitedInPath = Set<GridCoord>()
             for i in 0..<coords.count {
                 let current = coords[i]
@@ -114,7 +150,7 @@ public enum LevelValidator {
             }
         }
 
-        // Check full 100% board coverage
+        // 1. Check full 100% canonical board coverage
         if occupiedCells.count != gridSize.totalCells {
             throw ValidationError.incompleteBoardCoverage(
                 covered: occupiedCells.count,
@@ -122,13 +158,44 @@ public enum LevelValidator {
             )
         }
 
-        // Check CSP uniqueness if requested
-        if enforceUniqueSolution {
-            let solver = PuzzleSolver(gridSize: gridSize, pairs: level.pairs)
-            let result = solver.solve(maxSolutions: 2)
-            if !result.isSolvable || result.solutionCount != 1 {
-                throw ValidationError.notUniquelySolvable(solutions: result.solutionCount)
-            }
+        // 2. Full board solver check (Solver A)
+        let solver = PuzzleSolver(gridSize: gridSize, pairs: level.pairs)
+        let fullBoardResult = solver.solveFullBoard(maxSolutions: 2)
+
+        guard fullBoardResult.isSolvable else {
+            throw ValidationError.noFullBoardSolution
         }
+
+        if enforceUniqueSolution && fullBoardResult.solutionCount != 1 {
+            throw ValidationError.notUniquelySolvable(solutions: fullBoardResult.solutionCount)
+        }
+
+        // 3. Premature completion check (Solver B)
+        let prematureResult = solver.findPrematureSolution()
+        if enforceNoPrematureRouting, let premature = prematureResult {
+            throw ValidationError.prematureCompleteRoutingExists(
+                covered: premature.coveredCellCount,
+                total: gridSize.totalCells
+            )
+        }
+
+        // 4. Quality filter check
+        let qualityReport = LevelQualityScorer.evaluate(level)
+        if enforceQualityFilter && !qualityReport.passesQualityFilter {
+            throw ValidationError.qualityFilterFailed(reasons: qualityReport.rejectionReasons)
+        }
+
+        return ValidationReport(
+            levelId: level.id,
+            coveredCellCount: occupiedCells.count,
+            totalCellCount: gridSize.totalCells,
+            fullBoardSolutionCount: fullBoardResult.solutionCount,
+            hasPrematureRouting: prematureResult != nil,
+            prematureCoverageCount: prematureResult?.coveredCellCount,
+            isUniqueFullBoard: fullBoardResult.solutionCount == 1,
+            qualityScore: qualityReport.score,
+            isAccepted: true,
+            rejectionReason: nil
+        )
     }
 }
