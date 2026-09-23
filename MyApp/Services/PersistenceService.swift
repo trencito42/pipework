@@ -32,7 +32,6 @@ public struct PlayerProfile: Codable, Sendable {
     public var completedLevelIds: Set<String>
     public var levelRecords: [String: LevelProgress]
     public var totalLevelsSolved: Int
-    public var totalPipesRouted: Int
     public var soundEnabled: Bool
     public var hapticsEnabled: Bool
     public var accessibilitySymbolsEnabled: Bool
@@ -42,7 +41,6 @@ public struct PlayerProfile: Codable, Sendable {
         completedLevelIds: [],
         levelRecords: [:],
         totalLevelsSolved: 0,
-        totalPipesRouted: 0,
         soundEnabled: true,
         hapticsEnabled: true,
         accessibilitySymbolsEnabled: false,
@@ -63,7 +61,12 @@ public final class PersistenceService: ObservableObject {
     private init() {
         let paths = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
         self.fileURL = paths[0].appendingPathComponent("pipework_save.json")
-        self.profile = Self.load(from: fileURL, saveKey: saveKey)
+        let loadedProfile = Self.load(from: fileURL, saveKey: saveKey)
+        self.profile = loadedProfile
+
+        // Immediately propagate loaded settings to hardware services
+        AudioService.shared.isEnabled = loadedProfile.soundEnabled
+        HapticService.shared.isEnabled = loadedProfile.hapticsEnabled
     }
 
     private static func load(from url: URL, saveKey: String) -> PlayerProfile {
@@ -111,7 +114,6 @@ public final class PersistenceService: ObservableObject {
             profile.completedLevelIds.insert(levelId)
             profile.totalLevelsSolved += 1
         }
-        profile.totalPipesRouted += 1
 
         save()
     }
@@ -130,15 +132,27 @@ public final class PersistenceService: ObservableObject {
         accessibility: Bool? = nil,
         reduceMotion: Bool? = nil
     ) {
-        if let s = sound { profile.soundEnabled = s }
-        if let h = haptics { profile.hapticsEnabled = h }
-        if let a = accessibility { profile.accessibilitySymbolsEnabled = a }
-        if let r = reduceMotion { profile.reduceMotionEnabled = r }
+        if let s = sound {
+            profile.soundEnabled = s
+            AudioService.shared.isEnabled = s
+        }
+        if let h = haptics {
+            profile.hapticsEnabled = h
+            HapticService.shared.isEnabled = h
+        }
+        if let a = accessibility {
+            profile.accessibilitySymbolsEnabled = a
+        }
+        if let r = reduceMotion {
+            profile.reduceMotionEnabled = r
+        }
         save()
     }
 
     public func resetProgress() {
         profile = .initial
+        AudioService.shared.isEnabled = profile.soundEnabled
+        HapticService.shared.isEnabled = profile.hapticsEnabled
         save()
     }
 }

@@ -1,34 +1,37 @@
 import SwiftUI
+import Combine
 
 /// High-performance Canvas renderer recreating the tactile industrial look of PIPEWORK.
 public struct BoardCanvasView: View {
     @Binding public var state: PuzzleState
     @Binding public var history: MoveHistory
     public let showAccessibilitySymbols: Bool
+    public let reduceMotion: Bool
     public let blockedCoord: GridCoord?
     public let onBlockedCoordHandled: () -> Void
 
     @State private var dragPointerLocation: CGPoint? = nil
-    @State private var isCurrentlyDragging: Bool = false
-    private let gestureInterpreter = GridGestureInterpreter()
+    @StateObject private var gestureController = BoardGestureController()
 
     public init(
         state: Binding<PuzzleState>,
         history: Binding<MoveHistory>,
         showAccessibilitySymbols: Bool = false,
+        reduceMotion: Bool = false,
         blockedCoord: GridCoord? = nil,
         onBlockedCoordHandled: @escaping () -> Void = {}
     ) {
         self._state = state
         self._history = history
         self.showAccessibilitySymbols = showAccessibilitySymbols
+        self.reduceMotion = reduceMotion
         self.blockedCoord = blockedCoord
         self.onBlockedCoordHandled = onBlockedCoordHandled
     }
 
     public var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
-            let timeInterval = timeline.date.timeIntervalSinceReferenceDate
+        TimelineView(.animation(minimumInterval: reduceMotion ? 1.0 : (1.0 / 60.0))) { timeline in
+            let timeInterval = reduceMotion ? 0.0 : timeline.date.timeIntervalSinceReferenceDate
             GeometryReader { proxy in
                 let geometry = BoardGeometry(
                     gridSize: state.gridSize,
@@ -36,42 +39,78 @@ public struct BoardCanvasView: View {
                     margin: 8
                 )
 
-                Canvas { context, size in
-                    drawBoardShell(context: context, geometry: geometry)
-                    drawGridPlates(context: context, geometry: geometry)
-                    drawHoses(context: context, geometry: geometry, time: timeInterval)
-                    drawActiveDragNozzle(context: context, geometry: geometry)
-                    drawSockets(context: context, geometry: geometry, time: timeInterval)
-                    drawBlockedFeedback(context: context, geometry: geometry)
+                ZStack {
+                    Canvas { context, size in
+                        drawBoardShell(context: context, geometry: geometry)
+                        drawGridPlates(context: context, geometry: geometry)
+                        drawHoses(context: context, geometry: geometry, time: timeInterval)
+                        drawActiveDragNozzle(context: context, geometry: geometry)
+                        drawSockets(context: context, geometry: geometry, time: timeInterval)
+                        drawBlockedFeedback(context: context, geometry: geometry)
+                    }
+
+                    #if canImport(UIKit) && !os(watchOS)
+                    TouchTrackingView(
+                        onTouchBegan: { point in
+                            dragPointerLocation = point
+                            gestureController.interpreter.beginStroke(
+                                at: point,
+                                geometry: geometry,
+                                state: &state,
+                                history: &history
+                            )
+                        },
+                        onTouchMoved: { point in
+                            dragPointerLocation = point
+                            gestureController.interpreter.continueStroke(
+                                to: point,
+                                geometry: geometry,
+                                state: &state
+                            )
+                        },
+                        onTouchEnded: {
+                            dragPointerLocation = nil
+                            gestureController.interpreter.endStroke(
+                                state: &state,
+                                history: &history
+                            )
+                        }
+                    )
+                    #else
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                                .onChanged { value in
+                                    dragPointerLocation = value.location
+                                    if !gestureController.isDragging {
+                                        gestureController.isDragging = true
+                                        gestureController.interpreter.beginStroke(
+                                            at: value.startLocation,
+                                            geometry: geometry,
+                                            state: &state,
+                                            history: &history
+                                        )
+                                    } else {
+                                        gestureController.interpreter.continueStroke(
+                                            to: value.location,
+                                            geometry: geometry,
+                                            state: &state
+                                        )
+                                    }
+                                }
+                                .onEnded { _ in
+                                    dragPointerLocation = nil
+                                    gestureController.isDragging = false
+                                    gestureController.interpreter.endStroke(
+                                        state: &state,
+                                        history: &history
+                                    )
+                                }
+                        )
+                    #endif
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
-                .gesture(
-                    DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                        .onChanged { value in
-                            dragPointerLocation = value.location
-
-                            if !isCurrentlyDragging {
-                                isCurrentlyDragging = true
-                                gestureInterpreter.beginStroke(
-                                    at: value.startLocation,
-                                    geometry: geometry,
-                                    state: &state,
-                                    history: &history
-                                )
-                            } else {
-                                gestureInterpreter.continueStroke(
-                                    to: value.location,
-                                    geometry: geometry,
-                                    state: &state
-                                )
-                            }
-                        }
-                        .onEnded { _ in
-                            dragPointerLocation = nil
-                            isCurrentlyDragging = false
-                            gestureInterpreter.endStroke(state: &state)
-                        }
-                )
             }
         }
     }
@@ -118,7 +157,6 @@ public struct BoardCanvasView: View {
                 let coord = GridCoord(x: x, y: y)
                 let cellRect = geometry.cellRect(for: coord)
 
-                // Subtle cell seam plate
                 let seamRect = cellRect.insetBy(dx: 1, dy: 1)
                 context.stroke(
                     Path(seamRect),
@@ -126,7 +164,6 @@ public struct BoardCanvasView: View {
                     lineWidth: 1
                 )
 
-                // Center alignment registration cross/tick (2x2 dot)
                 let center = geometry.center(for: coord)
                 let tickRect = CGRect(x: center.x - 1, y: center.y - 1, width: 2, height: 2)
                 context.fill(Path(tickRect), with: .color(Color(white: 1.0, opacity: 0.07)))
@@ -193,8 +230,8 @@ public struct BoardCanvasView: View {
                 style: StrokeStyle(lineWidth: specularWidth, lineCap: .round, lineJoin: .round)
             )
 
-            // 7. Animated Fluid Pulses (when line is connected)
-            if isConnected {
+            // 7. Animated Fluid Pulses (when line is connected and reduceMotion is false)
+            if isConnected && !reduceMotion {
                 let speed: CGFloat = 65.0
                 let cycleLength: CGFloat = cs * 1.6
                 let dashOffset = CGFloat(time * speed).truncatingRemainder(dividingBy: cycleLength)
@@ -227,7 +264,6 @@ public struct BoardCanvasView: View {
         let headCenter = geometry.center(for: headCoord)
         let fluidColor = PipeworkTheme.fluidColor(for: activePath.fluidType)
 
-        // Glowing Nozzle Ring around current head cell
         let nozzleRadius = cs * 0.32
         let nozzleRect = CGRect(
             x: headCenter.x - nozzleRadius,
@@ -241,7 +277,6 @@ public struct BoardCanvasView: View {
             lineWidth: 2.5
         )
 
-        // Elastic Tether line towards active pointer
         if let pointer = dragPointerLocation {
             let dx = pointer.x - headCenter.x
             let dy = pointer.y - headCenter.y
@@ -275,11 +310,9 @@ public struct BoardCanvasView: View {
             let isConnected = state.paths[terminal.lineId]?.isConnected ?? false
             let isCurrentActive = state.activeLineId == terminal.lineId
 
-            // Socket Drop Shadow
             let shadowRect = CGRect(x: center.x - outerR, y: center.y - outerR + 2, width: outerR * 2, height: outerR * 2)
             context.fill(Path(ellipseIn: shadowRect), with: .color(Color.black.opacity(0.6)))
 
-            // 1. Machined Metal Outer Flange Ring (#2E3947 to #0E1216)
             let outerRect = CGRect(x: center.x - outerR, y: center.y - outerR, width: outerR * 2, height: outerR * 2)
             let flangePath = Path(ellipseIn: outerRect)
             let flangeGradient = Gradient(colors: [
@@ -293,7 +326,6 @@ public struct BoardCanvasView: View {
             )
             context.stroke(flangePath, with: .color(Color(red: 61/255, green: 75/255, blue: 93/255)), lineWidth: 1.5)
 
-            // 2. 6 Perimeter Mechanical Rivets / Flange Bolts
             let boltCount = 6
             let boltRadius = max(1.2, cs * 0.024)
             for i in 0..<boltCount {
@@ -306,29 +338,24 @@ public struct BoardCanvasView: View {
                 context.stroke(Path(ellipseIn: bRect), with: .color(Color(red: 74/255, green: 89/255, blue: 110/255)), lineWidth: 0.8)
             }
 
-            // 3. Dark Recessed Cavity (#050709 to #1B232C)
             let cavityRect = CGRect(x: center.x - cavityR, y: center.y - cavityR, width: cavityR * 2, height: cavityR * 2)
             let cavityPath = Path(ellipseIn: cavityRect)
             context.fill(cavityPath, with: .color(Color(red: 8/255, green: 11/255, blue: 15/255)))
             context.stroke(cavityPath, with: .color(Color(red: 5/255, green: 7/255, blue: 10/255)), lineWidth: 2)
 
-            // 4. Glowing Fluid Core Port
             let coreRect = CGRect(x: center.x - coreR, y: center.y - coreR, width: coreR * 2, height: coreR * 2)
             let corePath = Path(ellipseIn: coreRect)
             context.fill(corePath, with: .color(fluidColor))
 
-            // Specular Reflection Highlight (Upper-Left dot)
             let specR = coreR * 0.38
             let specRect = CGRect(x: center.x - coreR * 0.45, y: center.y - coreR * 0.45, width: specR, height: specR)
             context.fill(Path(ellipseIn: specRect), with: .color(Color.white.opacity(0.8)))
 
-            // 5. Connected Lock Ring (Illuminated collar)
             if isConnected || isCurrentActive {
                 let lockRingRect = CGRect(x: center.x - cavityR - 1.5, y: center.y - cavityR - 1.5, width: (cavityR + 1.5) * 2, height: (cavityR + 1.5) * 2)
                 context.stroke(Path(ellipseIn: lockRingRect), with: .color(fluidColor), lineWidth: 2)
             }
 
-            // 6. Accessibility Symbol
             if showAccessibilitySymbols {
                 let symbol = terminal.fluidType.symbolCode
                 let text = Text(symbol)
@@ -339,7 +366,7 @@ public struct BoardCanvasView: View {
         }
     }
 
-    // MARK: - 6. Blocked Shockwave Ring
+    // MARK: - 6. Blocked Feedback
 
     private func drawBlockedFeedback(context: GraphicsContext, geometry: BoardGeometry) {
         guard let blocked = blockedCoord else { return }
@@ -350,8 +377,6 @@ public struct BoardCanvasView: View {
         context.fill(circlePath, with: .color(PipeworkTheme.warningRed.opacity(0.35)))
         context.stroke(circlePath, with: .color(PipeworkTheme.warningRed), lineWidth: 2)
     }
-
-    // MARK: - Path Interpolation Helper
 
     private func buildContinuousPath(coordinates: [GridCoord], geometry: BoardGeometry) -> Path {
         var path = Path()
@@ -366,4 +391,13 @@ public struct BoardCanvasView: View {
         }
         return path
     }
+}
+
+/// Stable gesture controller across SwiftUI render passes.
+@MainActor
+public final class BoardGestureController: ObservableObject {
+    public let interpreter = GridGestureInterpreter()
+    public var isDragging: Bool = false
+
+    public init() {}
 }

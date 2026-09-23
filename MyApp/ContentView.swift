@@ -1,26 +1,28 @@
 import SwiftUI
 
-/// Root app shell managing screen navigation and presentation transitions.
+/// Root app shell coordinating splash screen, menu, level select, and gameplay.
 public struct ContentView: View {
     public enum ActiveScreen: Equatable {
+        case splash
         case menu
-        case sectorSelect
-        case gameplay(pack: LevelPack, level: LevelDefinition, isProcedural: Bool)
+        case levelSelect
+        case gameplay(pack: LevelPack, level: LevelDefinition)
 
         public static func == (lhs: ActiveScreen, rhs: ActiveScreen) -> Bool {
             switch (lhs, rhs) {
-            case (.menu, .menu), (.sectorSelect, .sectorSelect):
+            case (.splash, .splash), (.menu, .menu), (.levelSelect, .levelSelect):
                 return true
-            case let (.gameplay(p1, l1, proc1), .gameplay(p2, l2, proc2)):
-                return p1.id == p2.id && l1.id == l2.id && proc1 == proc2
+            case let (.gameplay(p1, l1), .gameplay(p2, l2)):
+                return p1.id == p2.id && l1.id == l2.id
             default:
                 return false
             }
         }
     }
 
-    @State private var currentScreen: ActiveScreen = .menu
+    @State private var currentScreen: ActiveScreen = .splash
     @State private var isShowingSettings: Bool = false
+    @ObservedObject private var persistence = PersistenceService.shared
 
     public init() {}
 
@@ -30,43 +32,39 @@ public struct ContentView: View {
                 .ignoresSafeArea()
 
             switch currentScreen {
+            case .splash:
+                SplashScreen(onFinished: {
+                    withAnimation(.easeInOut(duration: 0.35)) {
+                        currentScreen = .menu
+                    }
+                })
+
             case .menu:
                 MainMenuScreen(
-                    onPlayCampaign: {
+                    onPlay: {
+                        // Launch first uncompleted level or default level
+                        let pack = LevelRepository.allPacks.first!
+                        let level = pack.levels.first!
                         withAnimation(.easeInOut(duration: 0.25)) {
-                            currentScreen = .sectorSelect
+                            currentScreen = .gameplay(pack: pack, level: level)
                         }
                     },
-                    onPlayInfinite: {
-                        let procLevel = LevelGenerator.generateLevel(
-                            size: 6,
-                            pairCount: 4,
-                            packId: "procedural",
-                            levelNumber: 1
-                        )
-                        let procPack = LevelPack(
-                            id: "procedural",
-                            name: "OVERDRIVE",
-                            subtitle: "Infinite Generator",
-                            gridSize: 6,
-                            order: 99,
-                            levels: [procLevel]
-                        )
+                    onLevels: {
                         withAnimation(.easeInOut(duration: 0.25)) {
-                            currentScreen = .gameplay(pack: procPack, level: procLevel, isProcedural: true)
+                            currentScreen = .levelSelect
                         }
                     },
-                    onOpenSettings: {
+                    onSettings: {
                         isShowingSettings = true
                     }
                 )
                 .transition(.opacity)
 
-            case .sectorSelect:
+            case .levelSelect:
                 SectorSelectScreen(
                     onSelectLevel: { pack, level in
                         withAnimation(.easeInOut(duration: 0.25)) {
-                            currentScreen = .gameplay(pack: pack, level: level, isProcedural: false)
+                            currentScreen = .gameplay(pack: pack, level: level)
                         }
                     },
                     onBack: {
@@ -77,19 +75,18 @@ public struct ContentView: View {
                 )
                 .transition(.opacity)
 
-            case let .gameplay(pack, level, isProcedural):
+            case let .gameplay(pack, level):
                 GameplayScreen(
                     pack: pack,
                     level: level,
-                    isProceduralMode: isProcedural,
                     onExitToMenu: {
                         withAnimation(.easeInOut(duration: 0.25)) {
                             currentScreen = .menu
                         }
                     },
-                    onOpenSectorMatrix: {
+                    onOpenLevelSelect: {
                         withAnimation(.easeInOut(duration: 0.25)) {
-                            currentScreen = .sectorSelect
+                            currentScreen = .levelSelect
                         }
                     }
                 )

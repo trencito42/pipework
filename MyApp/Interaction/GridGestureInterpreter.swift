@@ -1,10 +1,12 @@
-import SwiftUI
+import CoreGraphics
+import Foundation
 
-/// Interprets touch gestures on the board with precise orthogonal stepping and snapshot undo tracking.
+/// Interprets continuous physical touch trajectories into exact orthogonal grid steps and transactional moves.
 @MainActor
 public final class GridGestureInterpreter {
     private var isStrokeActive: Bool = false
-    private var lastHeadCoord: GridCoord?
+    private var previousPointerPoint: CGPoint?
+    private var acceptedPipeHead: GridCoord?
 
     public init() {}
 
@@ -15,99 +17,96 @@ public final class GridGestureInterpreter {
         state: inout PuzzleState,
         history: inout MoveHistory
     ) {
-        guard let coord = geometry.coord(for: point) else { return }
+        guard let startCoord = geometry.coord(for: point) else { return }
 
-        // Save history snapshot before making changes
-        history.pushSnapshot(state)
+        // Capture pre-stroke snapshot for undo and transaction validation
+        history.beginTransaction(with: state)
 
-        let result = PuzzleRules.startStroke(state: &state, at: coord)
+        let result = PuzzleRules.startStroke(state: &state, at: startCoord)
         switch result {
         case .started, .continued:
             isStrokeActive = true
-            lastHeadCoord = coord
+            previousPointerPoint = point
+            acceptedPipeHead = startCoord
             HapticService.shared.terminalTouchDown()
             AudioService.shared.playTerminalGrab()
         case .ignored:
             isStrokeActive = false
-            lastHeadCoord = nil
-            // No changes made; remove redundant snapshot
-            _ = history.undo(currentState: state)
+            previousPointerPoint = nil
+            acceptedPipeHead = nil
+            history.discardTransaction()
         }
     }
 
-    /// Continues dragging, stepping towards the current pointer cell one orthogonal unit at a time.
+    /// Processes continuous finger movement across the board using 2D boundary raycasting.
     public func continueStroke(
         to point: CGPoint,
         geometry: BoardGeometry,
         state: inout PuzzleState
     ) {
-        guard isStrokeActive,
-              let activeLineId = state.activeLineId,
-              let activePath = state.paths[activeLineId],
-              let currentHead = activePath.head,
-              let targetCell = geometry.coord(for: point) else { return }
-
-        if currentHead == targetCell { return }
-
-        // Step orthogonally towards targetCell cell-by-cell
-        var stepHead = currentHead
-        var safetyLimit = 0
-        let maxSteps = state.gridSize.width + state.gridSize.height
-
-        while stepHead != targetCell && safetyLimit < maxSteps {
-            safetyLimit += 1
-
-            let dx = targetCell.x - stepHead.x
-            let dy = targetCell.y - stepHead.y
-
-            let nextX: Int
-            let nextY: Int
-
-            // Step in the axis of greater distance, or based on pixel offset within the cell
-            if abs(dx) >= abs(dy) && dx != 0 {
-                nextX = stepHead.x + (dx > 0 ? 1 : -1)
-                nextY = stepHead.y
-            } else if dy != 0 {
-                nextX = stepHead.x
-                nextY = stepHead.y + (dy > 0 ? 1 : -1)
-            } else {
-                break
-            }
-
-            let nextCoord = GridCoord(x: nextX, y: nextY)
-            let result = PuzzleRules.dragStep(state: &state, to: nextCoord)
-
-            switch result {
-            case .extended:
-                HapticService.shared.cellStep()
-                stepHead = nextCoord
-            case .connected:
-                HapticService.shared.lineConnected()
-                AudioService.shared.playConnectionLocked()
-                stepHead = nextCoord
-                // Stroke is locked to target terminal
-                return
-            case .cut:
-                HapticService.shared.lineCut()
-                AudioService.shared.playRouteCut()
-                stepHead = nextCoord
-            case .backtracked:
-                HapticService.shared.cellStep()
-                stepHead = nextCoord
-            case .blocked, .noChange:
-                // Obstacle encountered (e.g. enemy terminal or edge)
-                return
-            }
+        guard isStrokeActive, let prevPoint = previousPointerPoint else {
+            previousPointerPoint = point
+            return
         }
 
-        lastHeadCoord = stepHead
+        previousPointerPoint = point
+
+        // Calculate chronological sequence of crossed orthogonal cell boundaries
+        let crossed = ContinuousGridTraverser.crossedCells(
+            from: prevPoint,
+            to: point,
+            geometry: geometry
+        )
+
+        for nextCoord in crossed {
+            let stepResult = PuzzleRules.dragStep(state: &state, to: nextCoord)
+            switch stepResult {
+            case .extended:
+                acceptedPipeHead = nextCoord
+                HapticService.shared.cellStep()
+            case .connected:
+                acceptedPipeHead = nextCoord
+                HapticService.shared.lineConnected()
+                AudioService.shared.playConnectionLocked()
+            case .cut:
+                acceptedPipeHead = nextCoord
+                HapticService.shared.lineCut()
+                AudioService.shared.playRouteCut()
+            case .backtracked:
+                acceptedPipeHead = nextCoord
+                HapticService.shared.cellStep()
+            case .blocked, .noChange:
+                // Blocked step keeps pointer moving without desyncing
+                break
+            }
+        }
     }
 
-    /// Ends the stroke on finger release.
-    public func endStroke(state: inout PuzzleState) {
+    /// Finalizes the stroke on finger release and commits transactionally.
+    public func endStroke(
+        state: inout PuzzleState,
+        history: inout MoveHistory
+    ) {
         guard isStrokeActive else { return }
-        let result = PuzzleRules.endStroke(state: &state)
-        switch result {
+
+        // If the stroke ended with only 1 cell (just the socket itself with no extension),
+        // and it was not previously connected, clean it up so it is a true no-op
+        if let activeLineId = state.activeLineId,
+           let path = state.paths[activeLineId],
+           path.coordinates.count <= 1 {
+            var cleared = path
+            cleared.clear()
+            state.updatePath(for: activeLineId, path: cleared)
+        }
+
+        let endResult = PuzzleRules.endStroke(state: &state)
+        let didMutate = history.commitTransaction(with: state)
+
+        if didMutate {
+            state.moveCount += 1
+        }
+
+        switch endResult {
         case .completed(_, _, let puzzleSolved):
             if puzzleSolved {
                 HapticService.shared.boardCompleted()
@@ -116,7 +115,9 @@ public final class GridGestureInterpreter {
         case .cancelled:
             break
         }
+
         isStrokeActive = false
-        lastHeadCoord = nil
+        previousPointerPoint = nil
+        acceptedPipeHead = nil
     }
 }

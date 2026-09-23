@@ -1,6 +1,6 @@
 import Foundation
 
-/// Fast CSP backtracking solver with flood-fill island reachability pruning.
+/// Fast CSP backtracking solver with degree-constraint and flood-fill reachability pruning.
 public final class PuzzleSolver {
 
     public struct SolveResult: Sendable {
@@ -86,10 +86,12 @@ public final class PuzzleSolver {
             return
         }
 
-        // Branch into orthogonal neighbors
-        let neighbors = currentHead.orthogonalNeighbors(in: gridSize)
+        // Branch into orthogonal neighbors sorted by distance to target
+        let neighbors = currentHead.orthogonalNeighbors(in: gridSize).sorted {
+            $0.manhattanDistance(to: currentPair.end) < $1.manhattanDistance(to: currentPair.end)
+        }
+
         for next in neighbors {
-            // Target endpoint check
             if next == currentPair.end {
                 currentPaths[lineId]?.append(next)
                 backtrack(
@@ -108,7 +110,7 @@ public final class PuzzleSolver {
                 occupancy[next.x][next.y] = lineId
                 currentPaths[lineId]?.append(next)
 
-                if hasNoIsolatedUnreachableEmptyCells(occupancy: occupancy, currentHead: next, target: currentPair.end) {
+                if isValidState(occupancy: occupancy, currentHead: next, target: currentPair.end, pairIndex: pairIndex) {
                     backtrack(
                         pairIndex: pairIndex,
                         currentPaths: &currentPaths,
@@ -133,22 +135,32 @@ public final class PuzzleSolver {
         return true
     }
 
-    private func hasNoIsolatedUnreachableEmptyCells(
+    private func isValidState(
         occupancy: [[String?]],
         currentHead: GridCoord,
-        target: GridCoord
+        target: GridCoord,
+        pairIndex: Int
     ) -> Bool {
+        // Degree-2 constraint check: Every empty cell must have at least 2 available connections
         for y in 0..<gridSize.height {
             for x in 0..<gridSize.width {
                 if occupancy[x][y] == nil {
                     let coord = GridCoord(x: x, y: y)
-                    var openNeighbors = 0
+                    var available = 0
                     for n in coord.orthogonalNeighbors(in: gridSize) {
                         if occupancy[n.x][n.y] == nil || n == currentHead || n == target {
-                            openNeighbors += 1
+                            available += 1
+                        } else {
+                            // Check if n is an unfinished terminal
+                            for p in pairIndex..<pairs.count {
+                                if pairs[p].start == n || pairs[p].end == n {
+                                    available += 1
+                                    break
+                                }
+                            }
                         }
                     }
-                    if openNeighbors == 0 {
+                    if available < 2 {
                         return false
                     }
                 }

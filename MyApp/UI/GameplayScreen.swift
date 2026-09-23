@@ -6,9 +6,8 @@ public struct GameplayScreen: View {
 
     public let initialPack: LevelPack
     public let initialLevel: LevelDefinition
-    public let isProceduralMode: Bool
     public let onExitToMenu: () -> Void
-    public let onOpenSectorMatrix: () -> Void
+    public let onOpenLevelSelect: () -> Void
 
     @State private var currentPack: LevelPack
     @State private var currentLevel: LevelDefinition
@@ -18,21 +17,18 @@ public struct GameplayScreen: View {
     @State private var toastMessage: String? = nil
     @State private var toastWorkItem: DispatchWorkItem? = nil
     @State private var blockedCoord: GridCoord? = nil
-    @State private var isSoundOn: Bool = true
     @State private var isSettingsOpen: Bool = false
 
     public init(
         pack: LevelPack = LevelRepository.sector7x7Pack,
         level: LevelDefinition = LevelRepository.sector7x7Pack.levels[0],
-        isProceduralMode: Bool = false,
         onExitToMenu: @escaping () -> Void = {},
-        onOpenSectorMatrix: @escaping () -> Void = {}
+        onOpenLevelSelect: @escaping () -> Void = {}
     ) {
         self.initialPack = pack
         self.initialLevel = level
-        self.isProceduralMode = isProceduralMode
         self.onExitToMenu = onExitToMenu
-        self.onOpenSectorMatrix = onOpenSectorMatrix
+        self.onOpenLevelSelect = onOpenLevelSelect
 
         _currentPack = State(initialValue: pack)
         _currentLevel = State(initialValue: level)
@@ -51,7 +47,7 @@ public struct GameplayScreen: View {
             .ignoresSafeArea()
 
             VStack(spacing: 16) {
-                // 1. Brand & Header Zone
+                // 1. Header Zone
                 headerZone
 
                 // 2. 3-Column Status Bar with Integrated Pressure Meter
@@ -63,32 +59,33 @@ public struct GameplayScreen: View {
                 )
                 .padding(.horizontal, 16)
 
-                // 3. Hero Board Container with Diagnostic Toast
+                // 3. Hero Board Container with Toast
                 ZStack {
                     BoardCanvasView(
                         state: $puzzleState,
                         history: $history,
                         showAccessibilitySymbols: persistence.profile.accessibilitySymbolsEnabled,
+                        reduceMotion: persistence.profile.reduceMotionEnabled,
                         blockedCoord: blockedCoord,
                         onBlockedCoordHandled: { blockedCoord = nil }
                     )
                     .aspectRatio(1.0, contentMode: .fit)
                     .padding(.horizontal, 16)
 
-                    // Diagnostic Toast Message
+                    // Brief Feedback Toast
                     if let toast = toastMessage {
                         VStack {
                             Spacer()
                             Text(toast)
                                 .font(PipeworkTheme.monoFont(size: 11, weight: .bold))
-                                .foregroundColor(Color(red: 124/255, green: 141/255, blue: 159/255))
+                                .foregroundColor(Color(red: 140/255, green: 160/255, blue: 180/255))
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 6)
+                                    RoundedRectangle(cornerRadius: 8)
                                         .fill(Color(red: 13/255, green: 17/255, blue: 23/255))
                                         .overlay(
-                                            RoundedRectangle(cornerRadius: 6)
+                                            RoundedRectangle(cornerRadius: 8)
                                                 .stroke(Color(red: 33/255, green: 42/255, blue: 54/255), lineWidth: 1)
                                         )
                                 )
@@ -99,7 +96,7 @@ public struct GameplayScreen: View {
                 }
                 .frame(maxHeight: .infinity)
 
-                // 4. Bottom Controls Zone (Undo, Hint, Restart)
+                // 4. Bottom Tactical Controls Zone (Undo, Hint, Restart)
                 controlsZone
                     .padding(.horizontal, 24)
                     .padding(.bottom, 16)
@@ -107,19 +104,20 @@ public struct GameplayScreen: View {
 
             // Victory Modal
             if isVictoryPresented {
+                let bestMoves = persistence.getRecord(for: currentLevel.id)?.bestMoves
                 VictoryOverlayView(
-                    sectorName: "\(currentPack.name) — Level \(currentLevel.number)",
+                    levelTitle: "Level \(currentLevel.number)",
                     moves: puzzleState.moveCount,
-                    connectedFluids: puzzleState.connectedLineCount,
-                    totalFluids: puzzleState.totalLineCount,
-                    onNextSector: loadNextSector
+                    bestMoves: bestMoves,
+                    onNextLevel: loadNextLevel,
+                    onReplay: restartLevelAction,
+                    onLevels: onOpenLevelSelect
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
         }
         .onChange(of: puzzleState.isSolved) { _, isSolved in
             if isSolved {
-                // Record persistence progress
                 persistence.recordLevelCompletion(
                     levelId: currentLevel.id,
                     moves: puzzleState.moveCount,
@@ -134,24 +132,18 @@ public struct GameplayScreen: View {
         .sheet(isPresented: $isSettingsOpen) {
             SettingsScreen()
         }
-        .onAppear {
-            isSoundOn = persistence.profile.soundEnabled
-            AudioService.shared.isEnabled = isSoundOn
-            HapticService.shared.isEnabled = persistence.profile.hapticsEnabled
-        }
     }
 
     // MARK: - Header Zone
 
     private var headerZone: some View {
         HStack {
-            // Exit / Sector Matrix button
-            Button(action: onOpenSectorMatrix) {
-                HStack(spacing: 6) {
+            Button(action: onOpenLevelSelect) {
+                HStack(spacing: 5) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 13, weight: .bold))
-                    Text("SECTORS")
-                        .font(PipeworkTheme.monoFont(size: 11, weight: .bold))
+                    Text("Levels")
+                        .font(.system(size: 14, weight: .semibold))
                 }
                 .foregroundColor(PipeworkTheme.textMain)
                 .padding(.horizontal, 10)
@@ -165,7 +157,6 @@ public struct GameplayScreen: View {
 
             Spacer()
 
-            // Brand Title with Status Dot
             HStack(spacing: 6) {
                 Circle()
                     .fill(PipeworkTheme.primaryCyan)
@@ -173,29 +164,28 @@ public struct GameplayScreen: View {
                     .shadow(color: PipeworkTheme.primaryCyan, radius: 4)
 
                 Text("PIPEWORK")
-                    .font(PipeworkTheme.roundedFont(size: 18, weight: .heavy))
+                    .font(.system(size: 17, weight: .heavy, design: .rounded))
                     .foregroundColor(PipeworkTheme.textMain)
                     .tracking(2.0)
             }
 
             Spacer()
 
-            // Settings & Sound Buttons
             HStack(spacing: 6) {
                 Button(action: toggleSound) {
-                    Image(systemName: isSoundOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(isSoundOn ? PipeworkTheme.textMain : PipeworkTheme.textDim)
+                    Image(systemName: persistence.profile.soundEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(persistence.profile.soundEnabled ? PipeworkTheme.textMain : PipeworkTheme.textDim)
                         .frame(width: 32, height: 32)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(PipeworkTheme.panelBase))
+                        .background(RoundedRectangle(cornerRadius: 8).fill(PipeworkTheme.panelBase))
                 }
 
                 Button(action: { isSettingsOpen = true }) {
                     Image(systemName: "gearshape.fill")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(PipeworkTheme.textMuted)
                         .frame(width: 32, height: 32)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(PipeworkTheme.panelBase))
+                        .background(RoundedRectangle(cornerRadius: 8).fill(PipeworkTheme.panelBase))
                 }
             }
         }
@@ -206,32 +196,36 @@ public struct GameplayScreen: View {
     // MARK: - Tactical Controls Zone
 
     private var controlsZone: some View {
-        HStack(spacing: 24) {
+        HStack(spacing: 28) {
             // Undo Button
             tacticalRoundButton(
                 iconName: "arrow.uturn.backward",
+                label: "Undo",
                 disabled: !history.canUndo,
                 action: undoAction
             )
 
-            // Engineering Hint Button
+            // Hint Button
             tacticalRoundButton(
-                iconName: "scope",
+                iconName: "lightbulb",
+                label: "Hint",
                 disabled: isVictoryPresented,
                 action: provideHintAction
             )
 
-            // Flush / Restart Button
+            // Restart Button
             tacticalRoundButton(
                 iconName: "arrow.triangle.2.circlepath",
+                label: "Restart",
                 disabled: false,
-                action: restartSectorAction
+                action: restartLevelAction
             )
         }
     }
 
     private func tacticalRoundButton(
         iconName: String,
+        label: String,
         disabled: Bool,
         action: @escaping () -> Void
     ) -> some View {
@@ -253,8 +247,8 @@ public struct GameplayScreen: View {
                     .shadow(color: Color.black.opacity(0.6), radius: 6, y: 3)
 
                 Image(systemName: iconName)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(disabled ? PipeworkTheme.textDim : Color(red: 131/255, green: 146/255, blue: 165/255))
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundColor(disabled ? PipeworkTheme.textDim : Color(red: 140/255, green: 160/255, blue: 180/255))
             }
         }
         .disabled(disabled)
@@ -264,9 +258,8 @@ public struct GameplayScreen: View {
     // MARK: - Actions
 
     private func toggleSound() {
-        isSoundOn.toggle()
-        AudioService.shared.isEnabled = isSoundOn
-        persistence.updateSettings(sound: isSoundOn)
+        let newSound = !persistence.profile.soundEnabled
+        persistence.updateSettings(sound: newSound)
         HapticService.shared.terminalTouchDown()
     }
 
@@ -281,9 +274,8 @@ public struct GameplayScreen: View {
     private func provideHintAction() {
         guard !puzzleState.isSolved else { return }
 
-        // Find a pair whose current path does not match canonical solution
         guard let canonical = currentLevel.canonicalSolution else {
-            showToast("DIAGNOSTIC UNAVAILABLE")
+            showToast("Hint unavailable")
             return
         }
 
@@ -298,7 +290,7 @@ public struct GameplayScreen: View {
 
         guard let target = targetDef else { return }
 
-        // Remove conflicting lines
+        // Clear conflicting lines
         let solSet = Set(target.path)
         for (lineId, path) in puzzleState.paths {
             if lineId != target.lineId && path.coordinates.contains(where: { solSet.contains($0) }) {
@@ -322,37 +314,20 @@ public struct GameplayScreen: View {
             puzzleState.moveCount += 1
             AudioService.shared.playConnectionLocked()
             HapticService.shared.lineConnected()
-            showToast("OPTIMIZED: \(target.lineId.uppercased())")
+            showToast("Hint revealed")
         }
     }
 
-    private func restartSectorAction() {
+    private func restartLevelAction() {
         puzzleState = currentLevel.createInitialState()
         history.clear()
         isVictoryPresented = false
         AudioService.shared.playRouteCut()
         HapticService.shared.lineCut()
-        showToast("SYSTEM PURGED")
+        showToast("Level reset")
     }
 
-    private func loadNextSector() {
-        if isProceduralMode {
-            // Generate next procedural puzzle
-            let nextLevel = LevelGenerator.generateLevel(
-                size: currentLevel.size,
-                pairCount: currentLevel.pairs.count,
-                packId: "procedural",
-                levelNumber: currentLevel.number + 1
-            )
-            withAnimation(.easeInOut(duration: 0.3)) {
-                currentLevel = nextLevel
-                puzzleState = nextLevel.createInitialState()
-                history.clear()
-                isVictoryPresented = false
-            }
-            return
-        }
-
+    private func loadNextLevel() {
         let allPacks = LevelRepository.allPacks
         let currentPackIdx = allPacks.firstIndex(where: { $0.id == currentPack.id }) ?? 0
         let currentLevelIdx = currentPack.levels.firstIndex(where: { $0.id == currentLevel.id }) ?? 0
@@ -376,7 +351,7 @@ public struct GameplayScreen: View {
                 isVictoryPresented = false
             }
         } else {
-            onOpenSectorMatrix()
+            onOpenLevelSelect()
         }
     }
 
@@ -395,7 +370,6 @@ public struct GameplayScreen: View {
     }
 }
 
-/// Custom tactile button press style
 private struct TactileButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label

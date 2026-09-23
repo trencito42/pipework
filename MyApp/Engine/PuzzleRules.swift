@@ -91,7 +91,6 @@ public enum PuzzleRules {
 
         // If line is already connected to its destination terminal, do not extend further unless backtracking
         if activePath.isConnected {
-            // Check if user is backtracking from the connected terminal
             if activePath.coordinates.count >= 2 && activePath.coordinates[activePath.coordinates.count - 2] == targetCoord {
                 activePath.popLast()
                 state.updatePath(for: activeLineId, path: activePath)
@@ -102,13 +101,11 @@ public enum PuzzleRules {
 
         // Check if targetCoord is part of active line's own path (Backtracking / Redrawing)
         if let selfIndex = activePath.firstIndex(of: targetCoord) {
-            // Check if stepping back to immediate predecessor (1-cell backtrack)
             if selfIndex == activePath.coordinates.count - 2 {
                 activePath.popLast()
                 state.updatePath(for: activeLineId, path: activePath)
                 return .backtracked(lineId: activeLineId, currentHead: targetCoord)
             } else {
-                // Deep backtrack / truncate to earlier node
                 activePath.truncate(keepingUpToIndex: selfIndex)
                 state.updatePath(for: activeLineId, path: activePath)
                 return .backtracked(lineId: activeLineId, currentHead: targetCoord)
@@ -117,18 +114,15 @@ public enum PuzzleRules {
 
         // Check if targetCoord contains a terminal socket
         if let targetTerminal = state.terminal(at: targetCoord) {
-            // Check if it belongs to another line
             if targetTerminal.lineId != activeLineId {
                 return .blocked(reason: "Cannot cross or enter enemy terminal")
             }
 
-            // Belongs to active line: must be the target terminal (opposite of root)
             if targetCoord == activePath.targetTerminal {
                 activePath.append(targetCoord)
                 state.updatePath(for: activeLineId, path: activePath)
                 return .connected(lineId: activeLineId, terminal: targetCoord)
             } else {
-                // Starting terminal: already handled by selfIndex check or ignored
                 return .blocked(reason: "Cannot self-intersect starting terminal")
             }
         }
@@ -140,7 +134,6 @@ public enum PuzzleRules {
                 return .blocked(reason: "Invalid conflicting state")
             }
 
-            // Sever the other path before targetCoord
             otherPath.truncate(before: targetCoord)
             state.updatePath(for: otherLineId, path: otherPath)
             severedLineId = otherLineId
@@ -166,7 +159,6 @@ public enum PuzzleRules {
             return .cancelled
         }
 
-        state.moveCount += 1
         state.activeLineId = nil
         let isConnected = activePath.isConnected
         let isSolved = state.isSolved

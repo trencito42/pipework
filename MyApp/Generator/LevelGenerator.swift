@@ -1,64 +1,67 @@
 import Foundation
 
-/// Solution-first procedural generator for guaranteed 100% coverage, uniquely solvable puzzles.
-public final class LevelGenerator {
+/// Solution-first puzzle generator creating validated, 100% full-board coverage, uniquely solvable puzzles.
+public enum LevelGenerator {
 
-    private static let fluidOrder: [FluidType] = [
-        .coolant, .fuel, .chemical, .pressure, .thermal, .auxiliary, .plasma, .steam
-    ]
-
-    /// Generates a valid, verified level for the given grid size and pair count.
+    /// Generates a validated, uniquely solvable level with full board coverage.
     public static func generateLevel(
         size: Int,
         pairCount: Int,
-        packId: String,
-        levelNumber: Int
+        packId: String = "curated",
+        levelNumber: Int = 1,
+        maxAttempts: Int = 100
     ) -> LevelDefinition {
         let gridSize = GridSize(dimension: size)
-        var attempts = 0
-        let maxAttempts = 50
+        let fluids: [FluidType] = [.coolant, .fuel, .chemical, .pressure, .thermal, .auxiliary, .plasma]
 
-        while attempts < maxAttempts {
-            attempts += 1
-            if let level = attemptGenerate(gridSize: gridSize, pairCount: pairCount, packId: packId, levelNumber: levelNumber) {
-                return level
+        for _ in 0..<maxAttempts {
+            if let candidate = attemptGenerate(gridSize: gridSize, pairCount: pairCount, fluids: fluids, packId: packId, levelNumber: levelNumber) {
+                // Verify strict uniqueness with CSP Solver
+                let solver = PuzzleSolver(gridSize: gridSize, pairs: candidate.pairs)
+                let result = solver.solve(maxSolutions: 2)
+
+                if result.isSolvable && result.solutionCount == 1 {
+                    return candidate
+                }
             }
         }
 
-        // Fallback: return default handcrafted level if random partition takes too many iterations
+        // Fallback to default certified level if random attempt limit reached
         return LevelRepository.defaultLevel
     }
 
     private static func attemptGenerate(
         gridSize: GridSize,
         pairCount: Int,
+        fluids: [FluidType],
         packId: String,
         levelNumber: Int
     ) -> LevelDefinition? {
-        var occupancy = Array(repeating: Array(repeating: Optional<Int>.none, count: gridSize.height), count: gridSize.width)
+        var occupancy: [[Int?]] = Array(repeating: Array(repeating: nil, count: gridSize.height), count: gridSize.width)
         var paths: [[GridCoord]] = []
 
-        let allCoords = gridSize.allCoordinates.shuffled()
-        var seedIndex = 0
-
-        // 1. Seed paths
-        for p in 0..<pairCount {
-            while seedIndex < allCoords.count && occupancy[allCoords[seedIndex].x][allCoords[seedIndex].y] != nil {
-                seedIndex += 1
+        // 1. Seed initial start points
+        var availableCoords: [GridCoord] = []
+        for x in 0..<gridSize.width {
+            for y in 0..<gridSize.height {
+                availableCoords.append(GridCoord(x: x, y: y))
             }
-            if seedIndex >= allCoords.count { return nil }
+        }
+        availableCoords.shuffle()
 
-            let seed = allCoords[seedIndex]
+        guard availableCoords.count >= pairCount else { return nil }
+
+        for p in 0..<pairCount {
+            let seed = availableCoords[p]
             occupancy[seed.x][seed.y] = p
             paths.append([seed])
-            seedIndex += 1
         }
 
-        // 2. Grow paths to cover all cells (Randomized Voronoi / Snake Expansion)
+        // 2. Grow paths to cover all cells (Randomized Snake & Expansion)
         var unassignedCount = gridSize.totalCells - pairCount
         var growthStuck = 0
 
-        while unassignedCount > 0 && growthStuck < 100 {
+        while unassignedCount > 0 && growthStuck < 150 {
             var grownAny = false
             for p in 0..<pairCount {
                 let head = paths[p].last!
@@ -77,20 +80,21 @@ public final class LevelGenerator {
             }
         }
 
-        if unassignedCount > 0 { return nil }
+        guard unassignedCount == 0 else { return nil }
 
-        // Filter: each path must have length >= 2
-        for p in paths {
-            if p.count < 2 { return nil }
+        // 3. Ensure all paths have at least 2 cells
+        for path in paths {
+            if path.count < 2 { return nil }
         }
 
-        // 3. Construct LevelDefinition
+        // 4. Construct pairs and canonical paths
         var pairs: [TerminalPairDefinition] = []
         var canonicalSolution: [CanonicalPathDefinition] = []
 
-        for (idx, path) in paths.enumerated() {
-            let fluid = fluidOrder[idx % fluidOrder.count]
-            let lineId = fluid.id
+        for p in 0..<pairCount {
+            let path = paths[p]
+            let fluid = fluids[p % fluids.count]
+            let lineId = fluid.rawValue
             let start = path.first!
             let end = path.last!
 
@@ -111,12 +115,6 @@ public final class LevelGenerator {
             )
         }
 
-        // 4. Verify with PuzzleSolver
-        let solver = PuzzleSolver(gridSize: gridSize, pairs: pairs)
-        let solveResult = solver.solve(maxSolutions: 2)
-
-        guard solveResult.isSolvable else { return nil }
-
         return LevelDefinition(
             id: "\(packId)-\(levelNumber)",
             packId: packId,
@@ -124,9 +122,9 @@ public final class LevelGenerator {
             size: gridSize.width,
             pairs: pairs,
             canonicalSolution: canonicalSolution,
-            parMoves: pairs.count,
-            difficultyScore: Double(gridSize.width) * 0.5,
-            signature: "\(gridSize.width)x\(gridSize.height)_gen_\(levelNumber)"
+            parMoves: pairCount,
+            difficultyScore: Double(pairCount) * 0.8,
+            signature: "gen_\(gridSize.width)x\(gridSize.height)_\(levelNumber)"
         )
     }
 }

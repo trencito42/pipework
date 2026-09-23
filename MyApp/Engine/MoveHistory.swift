@@ -1,14 +1,16 @@
 import Foundation
 
-/// Manages undo and history snapshots for a puzzle session.
+/// Transactional undo/redo history manager for PIPEWORK.
 public struct MoveHistory: Sendable {
     private var undoStack: [PuzzleState]
     private var redoStack: [PuzzleState]
+    private var transactionSnapshot: PuzzleState?
     public let maxHistoryDepth: Int
 
     public init(maxHistoryDepth: Int = 50) {
         self.undoStack = []
         self.redoStack = []
+        self.transactionSnapshot = nil
         self.maxHistoryDepth = maxHistoryDepth
     }
 
@@ -20,23 +22,49 @@ public struct MoveHistory: Sendable {
         !redoStack.isEmpty
     }
 
-    /// Pushes the state prior to a new user action.
-    public mutating func pushSnapshot(_ state: PuzzleState) {
-        undoStack.append(state)
+    public var isInTransaction: Bool {
+        transactionSnapshot != nil
+    }
+
+    /// Begins a gesture stroke transaction, capturing pre-stroke state.
+    public mutating func beginTransaction(with state: PuzzleState) {
+        transactionSnapshot = state
+    }
+
+    /// Commits the active transaction if the board state actually changed.
+    /// Returns true if a move was committed (state changed), false if discarded (no-op).
+    @discardableResult
+    public mutating func commitTransaction(with finalState: PuzzleState) -> Bool {
+        guard let initial = transactionSnapshot else { return false }
+        transactionSnapshot = nil
+
+        // Check if paths actually changed
+        if initial.paths == finalState.paths {
+            // No logical change occurred; do not record a move or push undo history
+            return false
+        }
+
+        undoStack.append(initial)
         if undoStack.count > maxHistoryDepth {
             undoStack.removeFirst()
         }
         redoStack.removeAll()
+        return true
     }
 
-    /// Reverts to the most recent previous state, pushing currentState to redo stack.
+    /// Discards the current transaction without recording an undo snapshot.
+    public mutating func discardTransaction() {
+        transactionSnapshot = nil
+    }
+
+    /// Reverts to the previous state prior to the last committed gesture.
     public mutating func undo(currentState: PuzzleState) -> PuzzleState? {
         guard let previous = undoStack.popLast() else { return nil }
         redoStack.append(currentState)
         return previous
     }
 
-    /// Reapplies a previously undone state, pushing currentState to undo stack.
+    /// Reapplies a previously undone state.
     public mutating func redo(currentState: PuzzleState) -> PuzzleState? {
         guard let next = redoStack.popLast() else { return nil }
         undoStack.append(currentState)
@@ -47,5 +75,6 @@ public struct MoveHistory: Sendable {
     public mutating func clear() {
         undoStack.removeAll()
         redoStack.removeAll()
+        transactionSnapshot = nil
     }
 }

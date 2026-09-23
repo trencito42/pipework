@@ -1,22 +1,15 @@
-# PIPEWORK — Changelog
+# CHANGELOG
 
-## [0.2.0] - 2026-09-23
-### Added
-- Integrated full visual fidelity and interaction design system from exploratory prototype:
-  - Multi-layer vulcanized hydraulic hoses with ambient occlusion shadows, dark trench cores, glowing fluid channels, specular beams, and moving fluid pulse phase animations.
-  - Machined metal terminal sockets with beveled outer flange rings, 6 perimeter mechanical bolts/rivets, dark recessed chambers, fluid well ports with specular highlights, and illuminated connection lock collars.
-  - 3-column tactical status bar (`LINES`, `MOVES`, `PRESSURE`) with integrated 4pt glowing pressure gauge progress track transitioning from cyan to emerald green at 100% PRESSURE.
-  - 52x52pt circular tactical metallic buttons (`Undo`, `Hint`, `Restart`).
-  - Active drag nozzle indicator and elastic tether connecting lead cell nozzle to pointer coordinates.
-  - Added full-board 7x7 solution-first sectors from prototype (Sector 07, Sector 08) with 49/49 cell coverage verification.
-  - Engineering diagnostic hint system that detects and routes canonical paths.
-  - Diagnostic toast notification for blocked routes and system purges.
-
-## [0.1.0] - 2026-09-23
-### Added
-- Created complete project memory documentation: `AGENTS.md`, and full `/docs/` technical specifications.
-- Established clean pure Swift engine architecture (`GridCoord`, `GridDirection`, `GridSize`, `FluidType`, `Terminal`, `PipePath`, `PuzzleState`, `PuzzleRules`, `MoveHistory`).
-- Implemented core game rules: orthogonal path creation, auto-cut line collision, backtracking, undo/reset, and strict 100% PRESSURE win validation.
-- Implemented Codable `LevelDefinition` schema and starter curated levels.
-- Implemented interactive `BoardCanvasView` with `GridGestureInterpreter` for fluid multi-cell dragging and interpolation.
-- Added comprehensive unit tests for pure puzzle engine.
+## [1.1.0] - PIPEWORK Recovery & Stabilization Pass
+### Completed
+- **Continuous 1-Finger Multi-Turn Routing**: Implemented 2D Amanatides & Woo DDA / boundary intersection algorithm in `ContinuousGridTraverser.swift`. Finger moves smoothly through any number of turns (`1a -> 1b -> 2b -> 2c -> 3c -> 3d -> 4d`) without needing to stop or lift finger.
+- **Strict Orthogonal Raycasting**: Guaranteed zero diagonal grid transitions even when crossing corners or fast-swiping diagonally.
+- **Hardware-Level Touch Tracking Surface**: Created `TouchTrackingView.swift` leveraging direct UIKit touches with 120Hz ProMotion coalesced touch delivery and zero gesture recognition delays.
+- **Move Counting & Transactions**: Refactored `MoveHistory.swift` with atomic begin/commit/discard transaction lifecycle. Zero-change touches count as 0 moves. Single physical multi-step gestures count as exactly 1 move. Undo cleanly restores the pre-stroke board state.
+- **Immediate Hardware Settings Propagation**: Settings toggles (Sound, Haptics, Reduce Motion, Color Labels) immediately propagate to `AudioService` and `HapticService`.
+- **Reduce Motion & Performance Optimization**: Disabled fluid pulse animation when Reduce Motion is on; optimized Canvas redrawing.
+- **Blipmade Intro Splash**: Minimal cold-launch intro (< 1.0s) displaying "BLIPMADE" with cyan accent dot, shown once on cold start.
+- **UI Copy & Menu Streamlining**: Replaced fake industrial jargon with simple, natural labels (`Play`, `Continue`, `Levels`, `Settings`, `Sound`, `Haptics`, `Color Labels`, `Reduce Motion`, `Reset Progress`, `Undo`, `Hint`, `Restart`, `Next Level`).
+- **Curated Levels & Solution-First Validation**: Implemented `LevelValidator.swift` and verified 100% full-board coverage, canonical solution continuity, and solvability across curated packs.
+- **Disabled Procedural Mode from Player Menu**: Preserved solver and generator algorithms while hiding experimental endless mode from the main UI.
+- **Automated Test Suite**: Built comprehensive 40-test automated suite in `EngineTests.swift` exercising pure engine rules, continuous gesture routing, transactions, backtracking, collision cut, and level validation with 100% pass rate.
